@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>TLS (Transport Layer Security) | Network Packet Dictionary</title>
+  <meta name="description" content="TLS (Transport Layer Security) explained: purpose, layer placement, message fields overview, typical flow, Wireshark appearance, and common troubleshooting patterns." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <!-- Dictionary P0 v1.3: SAFE SCOPE (ONLY inside <article class="content">) -->
+  <style>
+    /* Wireshark filter block (scoped) */
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    /* Issues readability (scoped) */
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+    .content dl.issue{
+      margin:0.6em 0 1.4em;
+      padding:0.9em 1em;
+      border-radius:10px;
+      background:rgba(0,0,0,0.04);
+      border:1px solid rgba(0,0,0,0.08);
+    }
+    .content dl.issue dt{
+      font-weight:900;
+      margin-top:0.65em;
+    }
+    .content dl.issue dt:first-child{
+      margin-top:0;
+    }
+    .content dl.issue dd{
+      margin:0.2em 0 0.45em;
+      opacity:0.95;
+      line-height:1.65;
+    }
+    .content dl.issue dd + dt{
+      margin-top:0.75em;
+    }
+
+    /* Ordered list emphasis (scoped) */
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+
+  <!-- v1.3 rule: AdSense script must NOT be embedded in dictionary pages -->
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <!-- Ad slot (top) -->
+      <div class="ad">Ad slot (dictionary-top)</div>
+
+      <article class="content">
+        <h1>TLS (Transport Layer Security)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          TLS, Transport Layer Security, is the security protocol that provides <strong>encryption</strong>,
+          <strong>integrity</strong>, and (usually) <strong>server authentication</strong> for application traffic.
+          When you see <strong>https://</strong> in a browser, TLS is the mechanism that protects the data as it moves
+          across networks. TLS is typically used over TCP for HTTPS (HTTP/1.1 and many HTTP/2 deployments), and it also
+          appears in secure email submission, API connections, and many enterprise services.
+        </p>
+        <p>
+          From a packet-analysis perspective, TLS is both a blessing and a challenge. It protects privacy, but it also hides
+          the application payload. That means troubleshooting is usually about the <em>handshake metadata</em> (versions,
+          cipher suites, extensions, certificates) and the <em>transport behavior</em> (timing, loss, resets), rather than
+          “reading the application contents” from the capture.
+        </p>
+        <p>
+          Another practical point: TLS is often where user-visible failures surface even when the underlying network is fine.
+          For example, an expired certificate, a hostname mismatch, or a strict policy on supported versions can prevent a
+          connection long before the application gets a chance to send meaningful requests. When you interpret TLS captures,
+          you are essentially answering: “Did both sides agree on security parameters, and if not, who rejected what?”
+        </p>
+        <p>
+          Modern deployments mostly use TLS 1.2 or TLS 1.3. These versions differ in handshake structure and performance
+          characteristics, but the high-level goal is consistent: agree on keys and security parameters, authenticate the
+          server (and sometimes the client), and then exchange protected application data.
+        </p>
+
+        <h2>Where it sits in the stack (Layer &amp; usage)</h2>
+        <p>
+          TLS is commonly treated as an <strong>application/security layer</strong> protocol. It sits above a transport
+          (usually TCP) and below the application protocol that benefits from encryption (HTTP, SMTP submission, custom APIs).
+          Variants exist over UDP as well (DTLS), and QUIC integrates TLS-style security into a UDP-based transport.
+        </p>
+        <ul>
+          <li><strong>Transport:</strong> Commonly over TCP (e.g., HTTPS on 443). Variants exist over UDP (e.g., DTLS).</li>
+          <li><strong>Used by:</strong> Web (HTTPS), APIs, email submission, secure enterprise services, and more.</li>
+          <li><strong>What it protects:</strong> Confidentiality and integrity of application data; authenticates servers via certificates.</li>
+        </ul>
+        <p>
+          TLS negotiation happens before protected application data flows. That is why you can diagnose many “HTTPS problems”
+          without decrypting anything: if the handshake fails, you will see alerts, resets, or incomplete flights. If the
+          handshake succeeds but the application is slow, timing gaps and retransmissions still tell you whether the delay
+          is network-induced or server-induced.
+        </p>
+        <p>
+          In real networks, middleboxes can influence TLS behavior. Proxies may terminate and re-originate TLS, load balancers
+          may present different certificates depending on SNI, and security devices may block certain versions or ciphers.
+          In captures, this often shows up as “unexpected certificate issuer,” “handshake succeeds to a different endpoint,”
+          or sudden alerts after ClientHello.
+        </p>
+
+        <h2>Header overview (Fields at a glance)</h2>
+        <p>
+          TLS is message-based. At a high level you will see record headers and handshake messages such as ClientHello,
+          ServerHello, certificates, and “Finished” messages. For analysis, focus on what is observable without decryption:
+          version negotiation, selected cipher suite, extensions (SNI/ALPN), certificate chain details, and alert messages.
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Size</th>
+              <th>Purpose</th>
+              <th>Common values / notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Record type</td>
+              <td>1 byte</td>
+              <td>Identifies record category</td>
+              <td>Handshake, Application Data, Alert</td>
+            </tr>
+            <tr>
+              <td>Version (negotiation)</td>
+              <td>variable</td>
+              <td>Protocol version selection</td>
+              <td>TLS 1.2 vs 1.3; negotiated during handshake</td>
+            </tr>
+            <tr>
+              <td>ClientHello / ServerHello</td>
+              <td>variable</td>
+              <td>Negotiates parameters</td>
+              <td>Cipher suites, extensions, key share (TLS 1.3)</td>
+            </tr>
+            <tr>
+              <td>SNI / ALPN (extensions)</td>
+              <td>variable</td>
+              <td>Name indication and app protocol</td>
+              <td>SNI shows requested hostname; ALPN indicates HTTP/1.1 vs h2</td>
+            </tr>
+            <tr>
+              <td>Certificates</td>
+              <td>variable</td>
+              <td>Authentication material</td>
+              <td>Issuer, validity, SANs; chain depth and intermediates matter</td>
+            </tr>
+            <tr>
+              <td>Alerts</td>
+              <td>variable</td>
+              <td>Error signaling</td>
+              <td>Handshake failure, bad certificate, protocol version, etc.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it works (Typical flow)</h2>
+        <ol>
+          <li><strong>Transport setup:</strong> Client establishes the underlying transport (commonly TCP to port 443).</li>
+          <li><strong>ClientHello:</strong> Client proposes versions, cipher suites, and extensions (SNI/ALPN, supported groups).</li>
+          <li><strong>ServerHello:</strong> Server selects parameters and returns its chosen security settings.</li>
+          <li><strong>Certificate exchange:</strong> Server sends its certificate chain for authentication.</li>
+          <li><strong>Key agreement:</strong> Both sides derive shared secrets and keys (details differ between TLS 1.2 and 1.3).</li>
+          <li><strong>Finished:</strong> Handshake completes and application data becomes encrypted.</li>
+        </ol>
+        <ul>
+          <li><strong>Resumption:</strong> Repeat connections may resume to reduce handshake cost and latency.</li>
+          <li><strong>ALPN matters:</strong> The negotiated application protocol affects what happens next (HTTP/1.1 vs HTTP/2).</li>
+          <li><strong>Visibility changes:</strong> After handshake, payloads are protected; metadata remains useful for troubleshooting.</li>
+        </ul>
+        <p>
+          In many environments, the most important “decision point” is the ClientHello. It contains the hostname (SNI),
+          the application protocol preference (ALPN), and the set of supported versions/ciphers. If something is blocked by
+          policy or incompatible, failures often occur immediately after ClientHello or at the certificate validation step.
+        </p>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>tls</code></pre>
+
+        <p><strong>What you typically see:</strong></p>
+        <ul>
+          <li>ClientHello with SNI (hostname) and ALPN (e.g., “h2” or “http/1.1”) when available.</li>
+          <li>ServerHello, Certificates, and handshake completion messages before encrypted application data begins.</li>
+          <li>After handshake: “Application Data” records (contents encrypted), plus occasional Alerts on failures.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> When diagnosing “TLS fails,” look for TLS Alerts and note who sent them.
+          A server-side alert often indicates policy or compatibility; a client-side alert can indicate trust store or configuration issues.
+        </p>
+        <p>
+          If Wireshark labels are different in your environment (for example, older naming or dissector settings), the same
+          pattern still applies: identify the initial handshake messages, find the first error signal (alert/reset), and
+          determine whether the failure is due to negotiation, certificate validation, or transport instability.
+        </p>
+
+        <h2>Common issues &amp; troubleshooting hints</h2>
+
+        <h3>Handshake failure due to version or cipher mismatch</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            The connection fails immediately after ClientHello, often with an alert or abrupt termination. Users see errors
+            like “handshake failed,” “protocol version,” or generic connection failures when attempting HTTPS or API calls.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Legacy server/client incompatibility, disabled cipher suites, or a strict security policy rejecting offered
+            parameters. Some environments block older TLS versions or weak ciphers by design, which can break older clients.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Inspect ClientHello and ServerHello. Compare offered versions/ciphers/extensions with the selected parameters
+            (if any), and look for a TLS Alert describing the rejection. If there is no ServerHello at all, the block may
+            be policy-based or an intermediate device may be interfering.
+          </dd>
+        </dl>
+
+        <h3>Certificate trust and hostname validation errors</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Browsers warn “connection not private,” clients reject the connection, or automation fails with certificate
+            validation errors. The TLS handshake may terminate after the certificate is presented.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Expired certificate, missing intermediate chain, wrong hostname (SAN mismatch), or an untrusted issuer. In
+            enterprise environments, TLS interception can cause clients to distrust an unexpected internal CA.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Inspect the certificate chain and validity period, and compare the requested hostname (often visible via SNI)
+            to the certificate’s SAN entries. If the issuer is unexpected, consider whether a proxy is terminating TLS.
+          </dd>
+        </dl>
+
+        <h3>Slow TLS setup and high handshake latency</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            The first request is slow, while subsequent requests may be faster. Users experience “slow page loads” even
+            though once connected, throughput seems acceptable.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Full handshake cost (no resumption), DNS delay, packet loss during handshake flights, or high RTT to the server.
+            On unstable links, retransmissions during handshake can add large delays before any application data is exchanged.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Measure the time from TCP setup to handshake completion and to the first encrypted application data. Look for
+            retransmissions or time gaps around handshake messages, and compare multiple attempts to see whether resumption
+            reduces the cost on repeat connections.
+          </dd>
+        </dl>
+
+        <h2>Security notes (if relevant)</h2>
+        <p>
+          TLS is a primary security boundary for modern internet traffic. Security posture depends on version (TLS 1.2 vs 1.3),
+          cipher selection, certificate management, and correct hostname validation. From a capture perspective, avoid
+          “decrypting everything” as a default; use endpoint logs and controlled test keys only when necessary and appropriate.
+        </p>
+        <p>
+          Even without decryption, TLS metadata can be sensitive (hostnames via SNI, certificate details, timing patterns).
+          For production environments, treat captures as confidential data and apply least-privilege access and retention rules.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/dictionary.html">Back to Dictionary Index</a></li>
+
+          <li>
+            <a href="/fields.html">Key fields</a>
+            <span class="hint">(TLS ClientHello SNI/ALPN, TLS alerts — Soon)</span>
+          </li>
+
+          <li>
+            <a href="/topics.html">Related topics</a>
+            <span class="hint">(Reading a TLS handshake, Certificate chain pitfalls — Soon)</span>
+          </li>
+        </ul>
+
+        <!--
+        Done checklist (Dictionary P0 v1.3)
+        - Safe-scope CSS: YES (all selectors under .content)
+        - data-ads: on
+        - 1000–1600 words: verify before publishing
+        - H1 = 1: yes
+        - H2 >= 6: yes
+        - Table >= 1: yes
+        - Lists >= 2: yes
+        - Internal links >= 3: yes (dictionary/fields/topics)
+        - Soon is not linked: yes
+        - Wireshark filter uses <pre class="ws-filter">: yes
+        - Issues use <dl class="issue"> blocks: yes
+        - AdSense script embedded here: NO (required)
+        -->
+      </article>
+
+      <!-- Ad slot (bottom) -->
+      <div class="ad">Ad slot (dictionary-bottom)</div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

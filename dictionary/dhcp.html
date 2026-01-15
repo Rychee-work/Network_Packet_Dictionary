@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>DHCP (Dynamic Host Configuration Protocol) | Network Packet Dictionary</title>
+  <meta name="description" content="DHCP (Dynamic Host Configuration Protocol) explained: purpose, layer placement, message fields overview, typical flow, Wireshark appearance, and common troubleshooting patterns." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <!-- Dictionary P0 v1.3: SAFE SCOPE (ONLY inside <article class="content">) -->
+  <style>
+    /* Wireshark filter block (scoped) */
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    /* Issues readability (scoped) */
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+    .content dl.issue{
+      margin:0.6em 0 1.4em;
+      padding:0.9em 1em;
+      border-radius:10px;
+      background:rgba(0,0,0,0.04);
+      border:1px solid rgba(0,0,0,0.08);
+    }
+    .content dl.issue dt{
+      font-weight:900;
+      margin-top:0.65em;
+    }
+    .content dl.issue dt:first-child{
+      margin-top:0;
+    }
+    .content dl.issue dd{
+      margin:0.2em 0 0.45em;
+      opacity:0.95;
+      line-height:1.65;
+    }
+    .content dl.issue dd + dt{
+      margin-top:0.75em;
+    }
+
+    /* Ordered list emphasis (scoped) */
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+
+  <!-- v1.3 rule: AdSense script must NOT be embedded in dictionary pages -->
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <!-- Ad slot (top) -->
+      <div class="ad">Ad slot (dictionary-top)</div>
+
+      <article class="content">
+        <h1>DHCP (Dynamic Host Configuration Protocol)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          DHCP is the protocol that automatically assigns IP configuration to hosts: an IP address, subnet mask (or prefix),
+          default gateway, DNS servers, and other options. Without DHCP, every host would require manual configuration or a
+          custom provisioning workflow. DHCP is one of the first protocols you troubleshoot when “a device can’t get online”
+          on a managed network.
+        </p>
+        <p>
+          DHCP is designed for environments where clients may have no IP address yet. For that reason, early DHCP messages
+          often use broadcast delivery and special addressing behavior until the client is configured. The protocol needs to
+          work even when the client only knows its own MAC address and nothing else about the network.
+        </p>
+        <p>
+          In operational terms, DHCP defines “who owns which address, and for how long.” Misconfiguration here can lead to
+          duplicates, wrong default gateways, or DNS problems that all surface as “internet is down” from the user’s point
+          of view, even though L2/L3 connectivity might be fine.
+        </p>
+
+        <h2>Where it sits in the stack (Layer &amp; usage)</h2>
+        <p><span class="badge">L7 over UDP</span> DHCP is an application-layer protocol carried over UDP.</p>
+        <ul>
+          <li><strong>Transport:</strong> UDP; clients and servers use well-known ports (commonly 68 for clients, 67 for servers).</li>
+          <li><strong>Where used:</strong> Enterprise and home networks, Wi-Fi onboarding, VM networks, and IoT provisioning.</li>
+          <li><strong>Infrastructure:</strong> DHCP servers, relay agents (IP helpers), and security features like DHCP snooping.</li>
+        </ul>
+        <p>
+          DHCP behavior can differ between networks with direct server reachability and networks that require a relay agent
+          across routed segments. In captures, the presence of a relay is often visible and explains why broadcasts appear
+          to “cross” subnet boundaries even though routers normally stop L2 broadcasts.
+        </p>
+        <p>
+          Because DHCP runs early in the client’s lifecycle, failures here cascade: if DHCP does not complete, DNS, routing,
+          and application protocols never get a chance to run. That is why many access-layer troubleshooting runbooks start
+          with “check whether the client got a valid lease.”
+        </p>
+
+        <h2>Header overview (Fields at a glance)</h2>
+        <p>
+          DHCP messages are based on the BOOTP format, with fixed header fields plus a flexible options section. In practice,
+          troubleshooting often revolves around message type (Discover/Offer/Request/Ack) and key options like requested IP,
+          lease time, router, and DNS servers.
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Size</th>
+              <th>Purpose</th>
+              <th>Common values / notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Transaction ID (xid)</td>
+              <td>4 bytes</td>
+              <td>Matches replies to requests</td>
+              <td>Key for correlating DORA in captures</td>
+            </tr>
+            <tr>
+              <td>Client MAC (chaddr)</td>
+              <td>variable</td>
+              <td>Identifies the client</td>
+              <td>Often used by servers for reservations or static mappings</td>
+            </tr>
+            <tr>
+              <td>Client IP / Your IP / Server IP / Gateway IP</td>
+              <td>4 bytes each</td>
+              <td>Addresses involved in assignment</td>
+              <td>Many are 0.0.0.0 early in the flow; yiaddr holds the offered address</td>
+            </tr>
+            <tr>
+              <td>Flags</td>
+              <td>2 bytes</td>
+              <td>Broadcast/unicast preferences</td>
+              <td>Broadcast flag often set by some clients when they cannot receive unicast yet</td>
+            </tr>
+            <tr>
+              <td>Options</td>
+              <td>variable</td>
+              <td>Message type and parameters</td>
+              <td>Discover/Offer/Request/Ack, lease time, router, DNS, domain, and many more</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it works (Typical flow)</h2>
+        <p>The classic DHCP “DORA” sequence:</p>
+        <ol>
+          <li><strong>Discover:</strong> Client broadcasts asking for configuration.</li>
+          <li><strong>Offer:</strong> Server offers an IP address and options.</li>
+          <li><strong>Request:</strong> Client requests the offered address (or renews an existing lease).</li>
+          <li><strong>Ack:</strong> Server acknowledges and the client configures the interface.</li>
+        </ol>
+        <ul>
+          <li><strong>Renewal:</strong> Clients typically renew before lease expiry; renewals may be unicast if the client already has an address.</li>
+          <li><strong>Rebind:</strong> If the original server is not reachable, the client may broadcast to any server that can extend the lease.</li>
+          <li><strong>Relay:</strong> If the server is not on the local subnet, a relay forwards DHCP messages and adds relay information (giaddr and options).</li>
+        </ul>
+        <p>
+          Operationally, it helps to think of DHCP in two phases: initial acquisition (full DORA, often broadcast-heavy) and
+          steady-state lease maintenance (renewals and rebinding, often unicast). Problems in either phase can cause users to
+          lose connectivity, but they show up differently in packet captures.
+        </p>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>dhcp || bootp</code></pre>
+
+        <p><strong>What you typically see:</strong></p>
+        <ul>
+          <li>Message type option showing Discover/Offer/Request/Ack for each packet.</li>
+          <li>Transaction ID (xid) used to follow a single client’s DORA sequence.</li>
+          <li>Assigned IP (yiaddr) and key options such as router, DNS servers, domain, and lease time.</li>
+          <li>Relay information when an intermediate device is forwarding requests between segments.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> If a client never gets online, first confirm whether you see a full DORA.
+          “Discover only” suggests L2 reachability, VLAN, or server/relay issues; “Offer but no Ack” suggests policy or
+          conflict checks blocking later messages.
+        </p>
+
+        <h2>Common issues &amp; troubleshooting hints</h2>
+
+        <h3>1) Client sends Discover but receives no Offer</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            The device stays in “Obtaining IP address…” or self-assigns a fallback address (for example, an APIPA range).
+            Users may connect to Wi-Fi but report “no internet” immediately.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            DHCP server unreachable, relay misconfigured, VLAN mismatch, or filtering along the path. The Discover frames
+            might be stuck on the access switch, in the wrong VRF, or blocked by DHCP snooping or ACLs.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Capture at the client and at an upstream point if possible. Verify that Discover leaves the client’s VLAN and
+            check whether any Offer returns on the same segment. If relays are used, confirm that relayed packets actually
+            reach the server and that replies are sent back to the correct relay address.
+          </dd>
+        </dl>
+
+        <h3>2) Offer received, but client never completes Request/Ack</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Offers appear in captures, but the lease is not established. The client may keep sending Discover or appear to
+            “bounce” between different offers. From the user’s view, connectivity is intermittent or never stabilizes.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Client policy (for example, it requires specific options), address conflicts detected by the client, or security
+            controls dropping Request/Ack messages. In multi-server environments, overlapping scopes or misaligned options
+            can also cause unexpected behavior.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Follow the transaction ID for a single client. Check whether a Request is sent after the Offer and whether an Ack
+            returns. Compare options in the Offer against what the client expects (for instance, required router/DNS options)
+            and look for signs of duplicate address detection or ARP probing by the client.
+          </dd>
+        </dl>
+
+        <h3>3) Wrong gateway/DNS causing “internet is down” perception</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Clients successfully obtain an IP address but cannot reach the internet or resolve names. Pings to local devices
+            may work, while external sites fail or name resolution times out.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Incorrect router or DNS options in the DHCP scope, stale configuration carried over from a previous design,
+            or split network policy where some clients are intentionally isolated but not labeled clearly for operators.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Inspect the DHCP Ack in a capture and note the router and DNS options delivered to the client. Compare with
+            known-good clients in the same environment. Then capture DNS attempts and default gateway probes (ARP, ICMP)
+            to see whether they are targeting the correct devices and whether those devices respond.
+          </dd>
+        </dl>
+
+        <h2>Security notes (if relevant)</h2>
+        <p>
+          DHCP is a frequent target for rogue servers and spoofing. Networks often deploy DHCP snooping to ensure only
+          trusted ports can send server messages, and to build a binding table used by other protections (like Dynamic ARP
+          Inspection and IP source guard). For captures, unexpected Offers from non-authoritative devices are a strong
+          indicator of a rogue DHCP server or misconfigured lab gear plugged into production.
+        </p>
+        <p>
+          On unprotected networks, a malicious DHCP server can hand out wrong default gateways or DNS servers and silently
+          divert traffic. When analyzing suspicious connectivity, always confirm which device actually provided the lease,
+          and whether its MAC address and switch port match your intended infrastructure design.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/dictionary.html">Back to Dictionary Index</a></li>
+          <li>
+            <a href="/fields.html">Key fields</a>
+            <span class="hint">(DHCP message type option, lease/router/DNS options — Soon)</span>
+          </li>
+          <li>
+            <a href="/topics.html">Related topics</a>
+            <span class="hint">(DHCP DORA walkthrough, Rogue DHCP detection — Soon)</span>
+          </li>
+        </ul>
+
+        <!--
+        Done checklist (Dictionary P0 v1.3)
+        - Safe-scope CSS: YES (all selectors under .content)
+        - data-ads: on
+        - 1000–1600 words: target range（DHCP extended）
+        - H1 = 1: yes
+        - H2 >= 6: yes
+        - Table >= 1: yes
+        - Lists >= 2: yes
+        - Internal links >= 3: yes (dictionary/fields/topics)
+        - Soon is not linked: yes
+        - Wireshark filter uses <pre class="ws-filter">: yes
+        - Issues use <dl class="issue"> blocks: yes
+        - AdSense script embedded here: NO (required)
+        -->
+      </article>
+
+      <!-- Ad slot (bottom) -->
+      <div class="ad">Ad slot (dictionary-bottom)</div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

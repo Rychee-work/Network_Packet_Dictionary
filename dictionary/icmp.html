@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>ICMP (Internet Control Message Protocol) | Network Packet Dictionary</title>
+  <meta name="description" content="ICMP explained: definition, layer placement, header fields overview, typical flow, Wireshark tips, and common troubleshooting patterns." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <!-- Dictionary P0 v1.3: SAFE SCOPE (ONLY inside <article class="content">) -->
+  <style>
+    /* Wireshark filter block (scoped) */
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    /* Issues readability (scoped) */
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+    .content dl.issue{
+      margin:0.6em 0 1.4em;
+      padding:0.9em 1em;
+      border-radius:10px;
+      background:rgba(0,0,0,0.04);
+      border:1px solid rgba(0,0,0,0.08);
+    }
+    .content dl.issue dt{
+      font-weight:900;
+      margin-top:0.65em;
+    }
+    .content dl.issue dt:first-child{
+      margin-top:0;
+    }
+    .content dl.issue dd{
+      margin:0.2em 0 0.45em;
+      opacity:0.95;
+      line-height:1.65;
+    }
+    .content dl.issue dd + dt{
+      margin-top:0.75em;
+    }
+
+    /* Ordered list emphasis (scoped) */
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+
+  <!-- v1.3 rule: AdSense script must NOT be embedded in dictionary pages -->
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <!-- Ad slot (top) -->
+      <div class="ad">Ad slot (dictionary-top)</div>
+
+      <article class="content">
+        <h1>ICMP (Internet Control Message Protocol)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          ICMP is a companion protocol to IP used for control, diagnostics, and error reporting. Rather than carrying
+          application data, ICMP messages provide feedback about IP delivery: whether a destination is reachable, whether a
+          packet’s TTL expired, or whether a router could not forward a packet because of a problem on the path. Tools like
+          <strong>ping</strong> and <strong>traceroute</strong> rely heavily on ICMP.
+        </p>
+        <p>
+          From a protocol design point of view, ICMP sits next to IP as part of the error and control “side channel”:
+          it reports on what happened to other packets, instead of transporting user data itself. ICMP messages are usually
+          generated automatically by network devices and hosts in response to events, rather than being sent directly by
+          applications.
+        </p>
+        <p>
+          Even though ICMP is not “reliability” in the TCP sense, it is essential for network health. When ICMP is blocked
+          too aggressively, troubleshooting becomes harder, and in some cases normal functions like Path MTU Discovery can
+          break in subtle ways. On the other hand, allowing all ICMP blindly can expose unnecessary information about your
+          network, so a balanced approach is needed.
+        </p>
+
+        <h2>Where it sits in the stack (Layer &amp; usage)</h2>
+        <p><span class="badge">L3 (control)</span> ICMP is typically considered part of the network layer ecosystem.</p>
+        <ul>
+          <li><strong>Runs over:</strong> IPv4 (ICMPv4). (IPv6 uses a related but distinct protocol: ICMPv6.)</li>
+          <li><strong>Works with:</strong> Routers and hosts to signal reachability, errors, and timing.</li>
+          <li><strong>Where used:</strong> Diagnostics (ping/traceroute), error feedback, PMTUD support, operational monitoring.</li>
+          <li><strong>Direction:</strong> Often flows “backwards” compared to the traffic that triggered it, making it useful for
+            understanding the return path and intermediate devices.</li>
+        </ul>
+        <p>
+          In packet captures, ICMP often appears “in response” to something else: a UDP probe in traceroute, a TCP packet
+          that triggered a TTL expiration, or a large packet that required fragmentation but couldn’t be forwarded. For that
+          reason, you often analyze ICMP side by side with the original flow to understand the full story.
+        </p>
+        <p>
+          Administrators frequently rate-limit ICMP on routers and firewalls. This is useful for preventing abuse, but
+          excessive rate limiting can make tools like ping and traceroute appear unreliable, even when the underlying
+          application traffic is perfectly fine.
+        </p>
+
+        <h2>Header overview (Fields at a glance)</h2>
+        <p>
+          ICMP messages are identified by <strong>Type</strong> and <strong>Code</strong>. The rest of the header depends on
+          the message category: Echo Request/Reply includes an identifier and sequence; error messages often include a quote
+          of the original IP header (and part of its payload) to help the sender match the error to the triggering packet.
+        </p>
+        <p>
+          Conceptually, you can think of the ICMP header as:
+          a small fixed part that describes what kind of message this is, and a flexible part that carries context. The
+          quoted original packet is especially important when multiple flows are active, because it lets the sender know
+          exactly which connection or probe caused the error.
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Size</th>
+              <th>Purpose</th>
+              <th>Common values / notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Type</td>
+              <td>1 byte</td>
+              <td>Main message category</td>
+              <td>Echo Request/Reply, Destination Unreachable, Time Exceeded</td>
+            </tr>
+            <tr>
+              <td>Code</td>
+              <td>1 byte</td>
+              <td>Subtype within Type</td>
+              <td>e.g., “port unreachable”, “fragmentation needed”, “TTL exceeded”</td>
+            </tr>
+            <tr>
+              <td>Checksum</td>
+              <td>2 bytes</td>
+              <td>Integrity of ICMP message</td>
+              <td>Validated by receiver</td>
+            </tr>
+            <tr>
+              <td>Rest of header</td>
+              <td>variable</td>
+              <td>Type-specific fields</td>
+              <td>Echo: Identifier/Sequence; Errors: additional info</td>
+            </tr>
+            <tr>
+              <td>Quoted original packet</td>
+              <td>variable</td>
+              <td>Helps correlate error to traffic</td>
+              <td>Often includes original IP header + first bytes of payload</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it works (Typical flow)</h2>
+        <p>Three common ICMP-driven flows:</p>
+        <ol>
+          <li>
+            <strong>Ping:</strong> A host sends ICMP Echo Request to a target IP address; the peer responds with Echo Reply.
+            Round-trip time is measured between sending the request and receiving the reply. Multiple pings let you see
+            jitter, packet loss, and basic reachability over time.
+          </li>
+          <li>
+            <strong>Traceroute:</strong> Probes are sent with low TTL values, starting at 1 and increasing. Each router that
+            decrements the TTL to zero sends an ICMP Time Exceeded message back. By correlating the TTL value with the
+            responding router, traceroute rebuilds the path hop by hop.
+          </li>
+          <li>
+            <strong>Error feedback:</strong> A router or host detects an issue (unreachable network, blocked port, MTU issue)
+            and sends an ICMP error message back to the original sender. The sender inspects the quoted packet to understand
+            which flow was affected and may adjust behavior (for example, lowering MTU).
+          </li>
+        </ol>
+        <ul>
+          <li><strong>Correlation:</strong> Error ICMP often includes a snippet of the triggering packet so the sender can match it.</li>
+          <li><strong>Asymmetry:</strong> ICMP may take a different return path, so latency/visibility can differ from the forward traffic.</li>
+          <li><strong>Policy interaction:</strong> Security policies might treat ICMP differently from TCP/UDP, so you always need
+            to compare ICMP behavior with how the actual application traffic is handled.</li>
+        </ul>
+        <p>
+          In day-to-day operations, you typically do not “configure ICMP” directly in applications; instead you rely on the
+          network stack and infrastructure devices to generate and interpret these messages correctly. When something goes
+          wrong, having a basic mental model of these flows is critical for troubleshooting.
+        </p>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>icmp</code></pre>
+        <p><strong>What you typically see:</strong></p>
+        <ul>
+          <li>Type/Code decoded into friendly text (e.g., “Destination unreachable (Port unreachable)”).</li>
+          <li>For Echo: Identifier and Sequence fields, which let you follow individual ping requests and replies.</li>
+          <li>For errors: “Original IP” section showing the quoted header and ports/protocol if available.</li>
+          <li>In the packet list, ICMP frames often appear in a different color compared to TCP/UDP, making them easy to spot in mixed captures.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> When debugging traceroute-like behavior, filter on
+          <code>icmp.type == 11</code> (Time Exceeded) and check the quoted original destination to confirm which probe
+          triggered each hop response. When analyzing MTU problems, filters that focus on
+          <code>Destination unreachable (Fragmentation needed)</code> help you spot where along the path packets are being rejected.
+        </p>
+
+        <h2>Common issues &amp; troubleshooting hints</h2>
+
+        <h3>1) Ping works, application doesn’t (or the reverse)</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            ICMP Echo succeeds but TCP/UDP connections fail, or ICMP is blocked while applications still work. Users may
+            report that “ping is fine, but the web page never loads” or that monitoring systems show packet loss even
+            though the service itself is reachable.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Firewall policy treats ICMP differently from application traffic, allowing one while restricting the other.
+            In some environments, ICMP is fully allowed but only specific TCP/UDP ports are permitted; in others, ICMP
+            is heavily filtered even though application ports are open.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Compare captures: Echo Request/Reply vs the target TCP/UDP flow. Look for resets, timeouts, or silent drops on
+            the application ports while ICMP continues to succeed. On border firewalls, review rules to see whether Echo,
+            Time Exceeded, and Destination Unreachable are handled differently than web or VPN ports.
+          </dd>
+        </dl>
+
+        <h3>2) PMTUD failures / “black hole” links</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Small traffic works but large transfers stall; TLS handshakes may hang intermittently or only some sites break.
+            Users may be able to open a login page but fail when uploading files or loading content-heavy dashboards.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            ICMP “Fragmentation needed” (or Packet Too Big in IPv6) is blocked or rate-limited, preventing Path MTU Discovery
+            from adjusting segment size. Intermediate devices might drop these ICMP errors because of overly strict security
+            policies or misconfiguration.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Look for repeated TCP retransmissions with no progress, MSS that is too large for the path, and an absence of
+            matching ICMP errors in the capture. Testing with a smaller MTU on the endpoint can temporarily “fix” the issue
+            and strongly suggests that PMTUD is failing somewhere along the path.
+          </dd>
+        </dl>
+
+        <h3>3) Traceroute stops early</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Traceroute shows a few hops and then only “* * *” for the remaining hops. Other tests may show that the
+            destination is still reachable, so the missing hops are confusing for operators.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Routers or firewalls on the path rate-limit or block ICMP Time Exceeded messages, or treat the probe transport
+            (UDP/TCP/ICMP) differently after a certain hop. Some networks intentionally block traceroute to hide internal
+            topology while still allowing actual application traffic.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Capture on the source side, verify that probes continue to be sent with increasing TTL, and check whether any
+            ICMP Time Exceeded or related responses return from further hops. Comparing different traceroute methods
+            (ICMP/UDP/TCP) can also reveal policy differences and help you identify which device is performing the filtering.
+          </dd>
+        </dl>
+
+        <h2>Security notes (if relevant)</h2>
+        <p>
+          ICMP can be used in scanning, reflection, or signaling attacks, so networks often rate-limit or filter some types.
+          The key is balance: blocking all ICMP may reduce visibility and can break legitimate mechanisms. A common approach
+          is to allow essential ICMP (errors, PMTUD-related messages) while rate-limiting or restricting echo in exposed zones.
+        </p>
+        <p>
+          In hardened environments, you may see policies like “no echo from the Internet, but allow Destination Unreachable
+          and Packet Too Big back to servers.” From a troubleshooting point of view, documenting which ICMP types and codes
+          are allowed through each security zone can save a lot of time when chasing intermittent connectivity problems.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/dictionary.html">Back to Dictionary Index</a></li>
+          <li>
+            <a href="/fields.html">Key fields (Field Index)</a>
+            <span class="hint">— planned: ICMP type/code (Soon), ICMP echo id/seq (Soon)</span>
+          </li>
+          <li>
+            <a href="/topics.html">Related topics (Topic Index)</a>
+            <span class="hint">— planned: Ping vs reachability (Soon), PMTUD explained (Soon)</span>
+          </li>
+        </ul>
+
+        <!--
+        Done checklist (Dictionary P0 v1.3)
+        - Safe-scope CSS: YES (all selectors under .content)
+        - data-ads: on
+        - 1000–1600 words: yes（ICMP v1.3 extended）
+        - H1 = 1: yes
+        - H2 >= 6: yes
+        - Table >= 1: yes
+        - Lists >= 2: yes
+        - Internal links >= 3: yes (dictionary/fields/topics)
+        - Soon is not linked: yes
+        - Wireshark filter uses <pre class="ws-filter">: yes
+        - Issues use <dl class="issue"> blocks: yes
+        - AdSense script embedded here: NO (required)
+        -->
+      </article>
+
+      <!-- Ad slot (bottom) -->
+      <div class="ad">Ad slot (dictionary-bottom)</div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

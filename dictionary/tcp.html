@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>TCP (Transmission Control Protocol) | Network Packet Dictionary</title>
+  <meta name="description" content="TCP (Transmission Control Protocol) explained: definition, layer placement, header overview, typical flow, Wireshark appearance, and common troubleshooting patterns." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <!-- Dictionary P0 v1.3: SAFE SCOPE (ONLY inside <article class="content">) -->
+  <style>
+    /* Wireshark filter block (scoped) */
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    /* Issues section readability (scoped) */
+    .content h3{
+      font-size:1.15em;
+      font-weight:800;
+      margin-top:1.6em;
+      margin-bottom:0.4em;
+    }
+    .content dl.issue{
+      margin:0.6em 0 1.4em;
+      padding-left:1.2em;
+      border-left:3px solid rgba(0,0,0,0.08);
+    }
+    .content dl.issue dt{
+      font-weight:800;
+      margin-top:0.55em;
+    }
+    .content dl.issue dd{
+      margin:0.15em 0 0.35em;
+      opacity:0.95;
+      line-height:1.6;
+    }
+    .content dl.issue dd + dt{
+      margin-top:0.6em;
+    }
+
+    /* Make typical flow list easy to scan */
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:800; }
+  </style>
+
+  <!-- AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX"
+    crossorigin="anonymous"></script>
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <!-- Ad slot (top) -->
+      <div class="ad">Ad slot (dictionary-top)</div>
+
+      <article class="content">
+        <h1>TCP (Transmission Control Protocol)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          TCP (Transmission Control Protocol) is a connection-oriented transport protocol that provides reliable, ordered
+          delivery of a byte stream between applications. It sits above IP and turns best-effort packet delivery into
+          something applications can treat as a continuous stream. TCP handles retransmissions, sequencing, congestion
+          control, and flow control so the receiving application gets bytes in the correct order (or receives a clear
+          failure if the connection cannot be maintained).
+        </p>
+        <p>
+          In most networks, TCP is the “default choice” when correctness matters more than minimal latency. Web browsing
+          (HTTP/1.1 and many HTTP/2 deployments), email, SSH, file transfer protocols, and many enterprise client-server
+          systems commonly rely on TCP because it can recover from loss and reordering in the middle of the network.
+        </p>
+        <p>
+          A useful mental model: IP moves packets from A to B, but it does not guarantee they arrive, arrive once, or arrive
+          in order. TCP adds the missing pieces by maintaining per-connection state, tracking what has been sent, what has
+          been acknowledged, and what needs retransmission. That extra state is also why TCP behaves differently from
+          stateless protocols during failures, NAT changes, or middlebox timeouts.
+        </p>
+
+        <h2>Where it sits in the stack (Layer &amp; usage)</h2>
+        <p>
+          TCP is a transport-layer protocol (<strong>L4</strong>) that runs end-to-end between hosts. Applications typically
+          create a socket and let the operating system’s TCP stack manage the connection. From the application perspective,
+          TCP provides a stream; from a packet perspective, TCP carries segments identified by IP addresses and ports.
+        </p>
+        <ul>
+          <li><strong>Below:</strong> IPv4/IPv6 provides addressing and routing; TCP uses IP to deliver segments end-to-end.</li>
+          <li><strong>Above:</strong> Applications and application frameworks (HTTP, TLS, SMTP, SSH); they open a TCP socket (IP + port).</li>
+          <li><strong>Where used:</strong> Most stateful client-server applications where reliability and ordering matter.</li>
+        </ul>
+        <p>
+          A TCP connection is commonly identified by a 4-tuple: source IP, source port, destination IP, destination port.
+          In practice, sequence/acknowledgment state and negotiated options (like MSS or Window Scale) also define how a
+          connection behaves. On real networks, middleboxes like NAT and firewalls often track TCP state too, which is why
+          idle connections can drop when a device’s timeout is shorter than the application expects.
+        </p>
+        <p>
+          Another practical point: TCP is sensitive to round-trip time (RTT) and loss. Even if bandwidth is high, long RTT
+          or frequent loss can reduce throughput, especially during slow start or recovery. That is why troubleshooting TCP
+          often focuses on patterns like retransmissions, duplicate ACKs, window behavior, and handshake success rates.
+        </p>
+
+        <h2>Header overview (Fields at a glance)</h2>
+        <p>
+          TCP’s header provides addressing via ports, state via sequence/acknowledgment numbers, and behavior via flags and
+          options. You do not need bit-level knowledge to understand most captures. In practice, focusing on flags,
+          Seq/Ack progression, window behavior, and retransmission patterns is enough for effective diagnosis.
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Size</th>
+              <th>Purpose</th>
+              <th>Common values / notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Source / Destination port</td>
+              <td>2 bytes / 2 bytes</td>
+              <td>Identifies application endpoints</td>
+              <td>Common: 80/443 for web, 22 for SSH, ephemeral client ports</td>
+            </tr>
+            <tr>
+              <td>Sequence / Acknowledgment</td>
+              <td>4 bytes / 4 bytes</td>
+              <td>Ordering and reliability</td>
+              <td>Seq advances with bytes sent; Ack confirms bytes received</td>
+            </tr>
+            <tr>
+              <td>Flags</td>
+              <td>variable</td>
+              <td>Connection state and signaling</td>
+              <td>SYN, ACK, FIN, RST, PSH; combos define handshake/teardown</td>
+            </tr>
+            <tr>
+              <td>Window size</td>
+              <td>2 bytes</td>
+              <td>Flow control (receiver capacity)</td>
+              <td>Often scaled when Window Scale option is negotiated</td>
+            </tr>
+            <tr>
+              <td>Checksum</td>
+              <td>2 bytes</td>
+              <td>Integrity of TCP segment</td>
+              <td>Computed with pseudo-header including IP addressing info</td>
+            </tr>
+            <tr>
+              <td>Options</td>
+              <td>variable</td>
+              <td>Negotiated features</td>
+              <td>MSS, SACK, Window Scale, Timestamps are common</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it works (Typical flow)</h2>
+        <p>
+          A typical TCP session has a predictable structure: a handshake to establish state, a data phase with acknowledgments,
+          and a shutdown sequence. The steps below are the “shape” you should expect to see in most normal captures.
+        </p>
+        <ol>
+          <li><strong>Handshake:</strong> Client sends SYN; server replies SYN-ACK; client sends ACK (3-way handshake).</li>
+          <li><strong>Option negotiation:</strong> MSS, Window Scale, SACK and timestamps may be proposed/accepted during handshake.</li>
+          <li><strong>Data transfer:</strong> Application sends bytes; TCP segments them and tracks Seq/Ack for reliability.</li>
+          <li><strong>Flow control:</strong> Receiver advertises a window so sender doesn’t overwhelm buffers.</li>
+          <li><strong>Congestion control:</strong> Sender adapts rate based on loss/RTT signals to avoid congestion collapse.</li>
+          <li><strong>Retransmission and recovery:</strong> Lost segments are retransmitted; out-of-order delivery is handled.</li>
+          <li><strong>Teardown:</strong> FIN/ACK closes cleanly; RST indicates abrupt termination or rejected state.</li>
+        </ol>
+        <ul>
+          <li><strong>Reliability cost:</strong> TCP adds overhead and latency during handshake and recovery, but improves correctness.</li>
+          <li><strong>Stateful:</strong> Endpoints and middleboxes track state; timeouts and resets can break idle sessions.</li>
+          <li><strong>Performance depends on path:</strong> RTT, loss, and MTU issues can dominate perceived speed.</li>
+        </ul>
+        <p>
+          In modern web traffic, TCP is often paired with TLS. When debugging “slow web,” it helps to separate TCP-level
+          symptoms (handshake delays, loss, window stalls) from TLS/application-level symptoms (certificate errors, server
+          response delays). TCP captures give you the transport truth: what was sent, what was acknowledged, and what was
+          retransmitted.
+        </p>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>tcp.port == 443</code></pre>
+
+        <p><strong>What you typically see:</strong></p>
+        <ul>
+          <li>Flags (SYN/SYN-ACK/ACK) at the start, FIN or RST at the end</li>
+          <li>Seq/Ack progression; TCP “Len=” indicates payload size at TCP level</li>
+          <li>Window and options (MSS, SACK Permitted, Timestamps, Window Scale)</li>
+          <li>Expert info such as Retransmission, Out-Of-Order, Dup ACK</li>
+        </ul>
+
+        <p>
+          <strong>Quick read tip:</strong> To isolate initial connection attempts, focus on SYN packets and check whether a matching
+          SYN-ACK returns. Many SYNs with no SYN-ACK is a strong sign of filtering, routing problems, or a service not listening.
+        </p>
+
+        <h2>Common issues &amp; troubleshooting hints</h2>
+
+        <h3>Connection timeout during handshake</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            The client repeatedly sends SYN packets, but the connection never establishes. Applications report timeouts,
+            “cannot connect,” or “connection timed out,” especially during the initial open.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Firewall drops, server down, routing issues, asymmetric return path, or a port that is not reachable. In some cases,
+            a middlebox may silently drop unsolicited inbound traffic, making failures look like “nothing happens.”
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Capture near the client and filter for SYN/SYN-ACK. If SYN leaves but no SYN-ACK returns, suspect path or policy issues.
+            If SYN-ACK returns but the final ACK is missing, investigate client-side filtering or packet loss on the client path.
+          </dd>
+        </dl>
+
+        <h3>Frequent retransmissions and poor throughput</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Transfers are slow or unstable. Wireshark flags Retransmission and Duplicate ACK, and throughput appears much lower than
+            the link speed would suggest.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Packet loss, congestion, Wi-Fi interference, overloaded links, or buffer problems. MTU/fragmentation problems can also
+            cause consistent loss patterns, especially when large segments are used.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Look for bursts of Dup ACK, rising RTT, and retransmissions clustered around specific sequence ranges. Compare captures
+            from both ends when possible to distinguish true loss from capture loss or offload artifacts.
+          </dd>
+        </dl>
+
+        <h3>RST storms and abrupt disconnects</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Connections drop suddenly with RST. Applications see “connection reset” or unexpected disconnects, sometimes after a
+            period of idle time.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Middlebox timeout, policy-based reset, application crashes, or mismatched state after NAT rebinding or failover. Some
+            security devices actively reset connections they classify as forbidden or anomalous.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Identify who sends the RST (client, server, or an intermediate device). Correlate resets with idle durations and verify
+            NAT/firewall timers. If the RST does not match either endpoint’s MAC/IP path, suspect injection by a middlebox.
+          </dd>
+        </dl>
+
+        <h3>Zero Window and stalled sender</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            The sender stops transmitting because the receiver advertises a zero window. Applications appear “hung” or “stalled,”
+            even though the connection remains open.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            The receiver application is not reading data fast enough, buffers are exhausted, or the system is under memory/CPU pressure.
+            In some environments, upstream backpressure can cascade into prolonged window closure.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Filter for zero window indications and check whether Window Update appears later. Compare the timing to application behavior
+            (e.g., a slow consumer or a blocked thread) rather than assuming the network is the only cause.
+          </dd>
+        </dl>
+
+        <h2>Security notes (if relevant)</h2>
+        <p>
+          TCP does not encrypt payloads, so confidentiality is normally provided by TLS on top. However, TCP state can be targeted:
+          SYN floods exploit handshake state, and resets or state exhaustion can disrupt long-lived connections. Many defenses are
+          deployed at network edges, such as SYN cookies, rate limits, and careful tuning of stateful firewall timeouts.
+        </p>
+        <p>
+          When security is a concern, it is also useful to separate transport issues from authentication and encryption issues:
+          TCP tells you whether a path is stable; TLS and application logs tell you whether a peer is trusted and the session is valid.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/dictionary.html">Back to Dictionary Index</a></li>
+
+          <li>
+            <a href="/fields.html">Key fields</a>
+            <span class="hint">(TCP flags, Window, Options — Soon)</span>
+          </li>
+
+          <li>
+            <a href="/topics.html">Related topics</a>
+            <span class="hint">(3-way handshake walkthrough, Retransmission patterns, Zero Window troubleshooting — Soon)</span>
+          </li>
+        </ul>
+
+        <!--
+        Done checklist
+        - data-ads: on
+        - 1000–1600 words: verify before publishing
+        - H2 >= 6: yes
+        - Table >= 1: yes
+        - Lists >= 2: yes
+        - Internal links >= 3: yes (dictionary/fields/topics)
+        - No 404 links: yes (Soon not linked)
+        - Wireshark filter uses ws-filter block: yes
+        - Issues use dl.issue blocks with paragraphs: yes
+        -->
+      </article>
+
+      <!-- Ad slot (bottom) -->
+      <div class="ad">Ad slot (dictionary-bottom)</div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

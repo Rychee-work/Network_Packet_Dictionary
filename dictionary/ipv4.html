@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>IPv4 (Internet Protocol Version 4) | Network Packet Dictionary</title>
+  <meta name="description" content="IPv4 (Internet Protocol Version 4) explained: purpose, layer placement, header overview, typical flow, Wireshark appearance, and common troubleshooting patterns." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <!-- Dictionary P0 v1.3: SAFE SCOPE (ONLY inside <article class="content">) -->
+  <style>
+    /* Wireshark filter block (scoped) */
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    /* Issues readability (scoped) */
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+    .content dl.issue{
+      margin:0.6em 0 1.4em;
+      padding:0.9em 1em;
+      border-radius:10px;
+      background:rgba(0,0,0,0.04);
+      border:1px solid rgba(0,0,0,0.08);
+    }
+    .content dl.issue dt{
+      font-weight:900;
+      margin-top:0.65em;
+    }
+    .content dl.issue dt:first-child{
+      margin-top:0;
+    }
+    .content dl.issue dd{
+      margin:0.2em 0 0.45em;
+      opacity:0.95;
+      line-height:1.65;
+    }
+    .content dl.issue dd + dt{
+      margin-top:0.75em;
+    }
+
+    /* Ordered list emphasis (scoped) */
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+
+  <!-- v1.3 rule: AdSense script must NOT be embedded in dictionary pages -->
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <!-- Ad slot (top) -->
+      <div class="ad">Ad slot (dictionary-top)</div>
+
+      <article class="content">
+        <h1>IPv4 (Internet Protocol Version 4)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          IPv4, Internet Protocol version 4, is the core Layer 3 protocol that carries packets across networks using
+          globally meaningful addresses. IPv4 defines how a packet is addressed, how routers forward it hop by hop,
+          and how receivers identify the payload protocol (TCP, UDP, ICMP, and others).
+        </p>
+        <p>
+          A useful mental model is: Ethernet (L2) moves frames inside a local segment, while IPv4 (L3) moves packets across
+          multiple segments and routers. IPv4 does not guarantee delivery, order, or timing by itself; it provides the
+          addressing and forwarding layer that higher protocols depend on.
+        </p>
+        <p>
+          In practice, “IPv4 issues” often mean the packet cannot be routed to the right place, cannot survive the path
+          (TTL/MTU problems), or is modified on the way (NAT). That is why IPv4 is central to troubleshooting: once you can
+          reliably identify the source, destination, and path characteristics of a flow, higher-layer debugging becomes much faster.
+        </p>
+        <p>
+          IPv4 also defines how hosts interpret “where” a destination is. The same application request can either stay local
+          (within a subnet) or traverse multiple routed segments depending on the destination address and routing policy. This is
+          why IPv4 is often the first checkpoint in packet analysis: if addressing or routing assumptions are wrong, everything above
+          it can look broken even when the application itself is healthy.
+        </p>
+
+        <h2>Where it sits in the stack (Layer &amp; usage)</h2>
+        <p>
+          <strong>L3 — Network layer.</strong> IPv4 sits above link-layer framing (Ethernet, Wi-Fi, tunnels) and below
+          transport protocols like TCP and UDP. Routers make forwarding decisions primarily based on the IPv4 destination address.
+        </p>
+        <ul>
+          <li><strong>Below:</strong> L2 delivery to the next hop (e.g., Ethernet II frames, Wi-Fi frames, or tunnel encapsulation).</li>
+          <li><strong>Above:</strong> TCP/UDP/ICMP and applications (DNS, HTTP, TLS) that rely on end-to-end addressing.</li>
+          <li><strong>Where used:</strong> Nearly all enterprise and internet environments, including private RFC1918 networks plus NAT at edges.</li>
+        </ul>
+        <p>
+          IPv4 forwarding is hop-by-hop. Each router receives a packet, decrements its lifetime, and sends it toward the next hop.
+          This is why link problems (ARP, VLAN, switching) and routing problems (wrong route, blackhole, asymmetric path) often show up
+          as the same application symptom—yet they appear differently in packet captures.
+        </p>
+        <p>
+          Another useful distinction is “local delivery vs routed delivery.” If the destination is in the same subnet,
+          the sender resolves a MAC address and sends directly on the local link. If the destination is not local,
+          the sender targets the default gateway at L2, while the IP destination remains the remote host. This mismatch (L2 next hop vs L3 destination)
+          is normal, but it can confuse beginners when reading captures.
+        </p>
+        <p>
+          Operationally, IPv4 is often paired with mechanisms that change how packets appear in captures: NAT rewrites addresses,
+          tunnels add outer headers, and load balancers may terminate or re-originate flows. When debugging, it helps to decide whether
+          you are observing the “inner flow” (end-to-end intent) or the “outer transport” (what the network is currently forwarding).
+        </p>
+
+        <h2>Header overview (Fields at a glance)</h2>
+        <p>
+          The IPv4 header carries addressing, fragmentation behavior, and a small set of fields that influence forwarding and diagnostics.
+          In most captures you mainly interpret a handful of fields: source/destination, TTL, protocol, and fragmentation indicators.
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Size</th>
+              <th>Purpose</th>
+              <th>Common values / notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Source / Destination IP</td>
+              <td>4 bytes / 4 bytes</td>
+              <td>Endpoint addressing</td>
+              <td>Private (RFC1918) or public; NAT may rewrite these</td>
+            </tr>
+            <tr>
+              <td>TTL</td>
+              <td>1 byte</td>
+              <td>Limits lifetime (hop count)</td>
+              <td>Decrements each router hop; used by traceroute</td>
+            </tr>
+            <tr>
+              <td>Protocol</td>
+              <td>1 byte</td>
+              <td>Next header / payload type</td>
+              <td>TCP, UDP, ICMP — detailed mapping belongs in Fields</td>
+            </tr>
+            <tr>
+              <td>Identification</td>
+              <td>2 bytes</td>
+              <td>Fragment association</td>
+              <td>Used when fragmentation occurs</td>
+            </tr>
+            <tr>
+              <td>Flags &amp; Fragment Offset</td>
+              <td>variable</td>
+              <td>Fragmentation behavior</td>
+              <td>DF/MF and offset; detailed interpretation belongs in Fields</td>
+            </tr>
+            <tr>
+              <td>Header checksum</td>
+              <td>2 bytes</td>
+              <td>Header integrity</td>
+              <td>Recomputed at each hop when TTL changes</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it works (Typical flow)</h2>
+        <ol>
+          <li>A host selects the next hop using its routing table (local subnet vs default gateway).</li>
+          <li>The host encapsulates the IPv4 packet into an L2 frame addressed to that next hop (often via ARP on Ethernet).</li>
+          <li>Each router forwards the packet based on the destination IP, decrementing TTL along the way.</li>
+          <li>If a link MTU is too small and fragmentation is allowed, a packet may be fragmented; otherwise an ICMP error may appear.</li>
+          <li>The destination host demultiplexes the payload using the IPv4 Protocol field (to TCP/UDP/ICMP, etc.).</li>
+        </ol>
+        <ul>
+          <li><strong>Forwarding:</strong> Determined by routing, not by MAC addresses.</li>
+          <li><strong>Lifetime control:</strong> TTL prevents indefinite loops and enables path diagnostics.</li>
+          <li><strong>Best-effort:</strong> Loss, reordering, and jitter are possible; reliability comes from higher layers if needed.</li>
+        </ul>
+        <p>
+          If you are reading a capture, a quick sanity check is: “Does the sender use the correct gateway, and is the destination
+          address what we expect?” Many problems that look like application failures are simply packets being sent to the wrong place,
+          not being routed at all, or being dropped due to policy.
+        </p>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>ip</code></pre>
+
+        <p><strong>What you typically see:</strong></p>
+        <ul>
+          <li>Source and destination addresses are the first thing to confirm when debugging “wrong host” or NAT issues.</li>
+          <li>TTL changes across hops are a strong signal when tracing paths or spotting loops.</li>
+          <li>“Fragmented IP protocol” and reassembly notes appear when fragmentation is involved.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> When you suspect NAT, compare captures on the inside and outside of the NAT boundary.
+        </p>
+        <p>
+          For deeper inspection, you can narrow down traffic by address (for example, a single host) and then look at how the
+          TTL and fragmentation-related fields behave across interfaces. Even without perfect topology knowledge, these patterns
+          often reveal where “the path changes.”
+        </p>
+        <p>
+          A practical workflow is to start wide (filter `ip`), then progressively narrow: focus on a single conversation by selecting
+          one source/destination pair, and finally inspect the header fields that “change on the path” such as TTL and fragmentation flags.
+          This keeps you from overfitting too early to an application hypothesis and helps you locate whether the problem is local, routed, or policy-driven.
+        </p>
+
+        <h2>Common issues &amp; troubleshooting hints</h2>
+
+        <h3>MTU problems and fragmentation symptoms</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Some connections work while others stall, especially for “larger” transfers. Users may report that small pings succeed
+            but certain websites or VPN connections hang. Captures may show repeated retransmissions above IP without clear application progress.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            A path MTU mismatch exists, and fragmentation is blocked or not handled as expected. If “don’t fragment” behavior is enforced
+            and ICMP messages are filtered, endpoints may never discover the correct usable MTU.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Look for ICMP “fragmentation needed” style errors or evidence that packets exceed a link MTU along the path.
+            If you see large packets leaving but not arriving (or repeated retries), MTU/fragmentation is a strong candidate.
+          </dd>
+        </dl>
+
+        <h3>Routing blackhole (packets disappear)</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Traffic leaves the sender but no replies return, and the failure persists across multiple applications. The sender may
+            show repeated retries at TCP level, while Wireshark shows outbound packets without matching inbound responses.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            A missing route, incorrect next hop, policy route, or ACL causes packets to be dropped somewhere in the path.
+            Asymmetric routing can also cause replies to return via a different path and be blocked by stateful filtering.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Compare captures at different points (client vs gateway vs server side) if possible. If the packet is visible on one side
+            but never appears downstream, the drop location is between those points. TTL patterns can also suggest loops or unexpected hops.
+          </dd>
+        </dl>
+
+        <h3>NAT side effects (unexpected IP/port changes)</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Applications fail only across network boundaries, or sessions break when moving between networks. Captures show that
+            the “same” flow appears with different addressing on different interfaces, which can confuse correlation.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Network Address Translation rewrites source/destination information. Some protocols embed IP/port data inside payloads
+            or assume stable addressing, and those assumptions can break without protocol-aware handling.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Capture on both sides of the NAT device and compare the 5-tuple (src/dst IP, src/dst port, protocol).
+            If the payload matches but the addressing changes across the boundary, NAT is in the path and may be relevant to the failure.
+          </dd>
+        </dl>
+
+        <h2>Security notes (if relevant)</h2>
+        <p>
+          IPv4 itself does not provide encryption or strong authentication. Many security controls operate around it:
+          segmentation with subnets/VLANs, filtering with firewalls, and encryption at higher layers (TLS, VPNs). IP spoofing,
+          scanning, and reflection-style abuse rely on the fact that IP headers can be forged unless prevented by network policy.
+        </p>
+        <p>
+          From a capture perspective, security investigations often start with the same IPv4 basics: “Who is talking to whom, and via which path?”
+          Unexpected source addresses, unusual TTL values, or traffic that appears only on one side of a boundary can indicate spoofing,
+          misrouting, or asymmetric visibility. IPv4 does not prevent these by itself, so defense relies on filtering, segmentation,
+          and validation at network edges.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/dictionary.html">Back to Dictionary Index</a></li>
+
+          <li>
+            <a href="/fields.html">Key fields</a>
+            <span class="hint">(IPv4 TTL, Flags/Fragmentation — Soon)</span>
+          </li>
+
+          <li>
+            <a href="/topics.html">Related topics</a>
+            <span class="hint">(Troubleshooting MTU, Routing blackholes — Soon)</span>
+          </li>
+        </ul>
+
+        <!--
+        Done checklist (Dictionary P0 v1.3)
+        - Safe-scope CSS: YES (all selectors under .content)
+        - data-ads: on
+        - 1000–1600 words: verify before publishing
+        - H1 = 1: yes
+        - H2 >= 6: yes
+        - Table >= 1: yes
+        - Lists >= 2: yes
+        - Internal links >= 3: yes (dictionary/fields/topics)
+        - Soon is not linked: yes
+        - Wireshark filter uses <pre class="ws-filter">: yes
+        - Issues use <dl class="issue"> blocks: yes
+        - AdSense script embedded here: NO (required)
+        -->
+      </article>
+
+      <!-- Ad slot (bottom) -->
+      <div class="ad">Ad slot (dictionary-bottom)</div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

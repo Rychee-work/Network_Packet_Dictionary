@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>ARP (Address Resolution Protocol) | Network Packet Dictionary</title>
+  <meta name="description" content="ARP (Address Resolution Protocol) explained: purpose, layer placement, header overview, typical flow, Wireshark appearance, and common troubleshooting patterns." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <!-- P0 v1.3 SAFE SCOPE: dictionary-local CSS affects ONLY inside <article class="content"> -->
+  <style>
+    /* Wireshark filter block (scoped) */
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    /* Issues section readability (scoped) */
+    .content h3{
+      font-size:1.15em;
+      font-weight:800;
+      margin-top:1.6em;
+      margin-bottom:0.4em;
+    }
+    .content dl.issue{
+      margin:0.6em 0 1.4em;
+      padding-left:1.2em;
+      border-left:3px solid rgba(0,0,0,0.08);
+    }
+    .content dl.issue dt{
+      font-weight:800;
+      margin-top:0.55em;
+    }
+    .content dl.issue dd{
+      margin:0.15em 0 0.35em;
+      opacity:0.95;
+      line-height:1.6;
+    }
+    .content dl.issue dd + dt{
+      margin-top:0.6em;
+    }
+
+    /* Make typical flow list easy to scan (already scoped) */
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:800; }
+  </style>
+
+  <!-- AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX"
+    crossorigin="anonymous"></script>
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <!-- Ad slot (top) -->
+      <div class="ad">Ad slot (dictionary-top)</div>
+
+      <article class="content">
+        <h1>ARP (Address Resolution Protocol)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          ARP, the Address Resolution Protocol, is the mechanism that maps an IPv4 address to a link-layer (MAC) address
+          on a local network. When a host wants to send an IPv4 packet to a next hop on the same LAN, it needs a destination
+          MAC address to build the Ethernet frame. ARP answers the question: “Which MAC owns this IPv4 address right now?”
+        </p>
+        <p>
+          In most everyday captures, ARP appears as short request/reply exchanges that happen before “real” traffic begins.
+          It is easy to ignore—until it breaks. If ARP resolution fails, higher-layer protocols (TCP, UDP, DNS, HTTP) may
+          look “down” even though the link is physically connected, because the host cannot build frames to reach its gateway
+          or neighbor.
+        </p>
+
+        <h2>Where it sits in the stack (Layer &amp; usage)</h2>
+        <p>
+          ARP is best understood as a bridging function between <strong>L3 addressing (IPv4)</strong> and <strong>L2 delivery (Ethernet)</strong>.
+          It operates only within the local broadcast domain and is not routed across subnets.
+        </p>
+        <ul>
+          <li><strong>Below:</strong> Ethernet II framing (ARP is carried in Ethernet with EtherType <code>0x0806</code>).</li>
+          <li><strong>Above:</strong> IPv4 forwarding decisions (who is the next hop?) and normal application traffic that depends on reachability.</li>
+          <li><strong>Where used:</strong> LANs with IPv4, home/enterprise networks, data centers, virtualization bridges, and any place hosts share a subnet.</li>
+        </ul>
+        <p>
+          A key practical point: when a host needs to reach a destination outside its subnet, it does not ARP for the remote host.
+          It ARPs for the <em>default gateway’s</em> MAC address and then sends packets to the gateway at L2 while keeping the remote IP
+          as the L3 destination.
+        </p>
+
+        <h2>Header overview (Fields at a glance)</h2>
+        <p>
+          ARP messages are small and structured. They identify the link-layer type and protocol type, then include sender and target
+          addresses. In normal use you see two main operations: ARP request (“who has X?”) and ARP reply (“X is at Y”).
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Size</th>
+              <th>Purpose</th>
+              <th>Common values / notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Hardware type</td>
+              <td>2 bytes</td>
+              <td>Link-layer type</td>
+              <td>Typically Ethernet</td>
+            </tr>
+            <tr>
+              <td>Protocol type</td>
+              <td>2 bytes</td>
+              <td>Network-layer protocol</td>
+              <td>Typically IPv4 (<code>0x0800</code>)</td>
+            </tr>
+            <tr>
+              <td>Operation</td>
+              <td>2 bytes</td>
+              <td>Request vs reply</td>
+              <td>Request (“who-has”), Reply (“is-at”) — exact values in Fields (Soon)</td>
+            </tr>
+            <tr>
+              <td>Sender MAC / Sender IP</td>
+              <td>6 bytes / 4 bytes</td>
+              <td>Who is asking / answering</td>
+              <td>Used to populate ARP caches on listeners</td>
+            </tr>
+            <tr>
+              <td>Target MAC / Target IP</td>
+              <td>6 bytes / 4 bytes</td>
+              <td>Who the message is about</td>
+              <td>Target MAC may be empty in requests</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it works (Typical flow)</h2>
+        <ol>
+          <li>A host decides the next hop for an IPv4 destination (neighbor on the subnet, or the default gateway).</li>
+          <li>If the next hop MAC is not in the ARP cache, the host sends an ARP request as a broadcast on the LAN.</li>
+          <li>All hosts receive the request; the owner of the target IPv4 address replies with its MAC address.</li>
+          <li>The sender stores the mapping in its ARP cache for a limited time and immediately sends the intended traffic.</li>
+          <li>Devices may refresh or update mappings over time; changes can occur during failover, VM migration, or readdressing.</li>
+        </ol>
+        <ul>
+          <li><strong>Broadcast request:</strong> One-to-many discovery inside the LAN.</li>
+          <li><strong>Unicast reply:</strong> Direct response containing the mapping.</li>
+          <li><strong>Cache behavior:</strong> Short-lived mappings reduce ARP chatter but require refresh on change.</li>
+        </ul>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>arp</code></pre>
+
+        <ul>
+          <li>Requests often read like: “Who has 192.168.1.1? Tell 192.168.1.20” (wording varies by Wireshark version).</li>
+          <li>Replies often read like: “192.168.1.1 is at aa:bb:cc:dd:ee:ff”.</li>
+          <li>You commonly see ARP bursts at the start of a connection, after sleep/wake, or during topology changes.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> If traffic to “the internet” fails, check whether the host can ARP the default gateway.
+          No gateway MAC mapping usually means everything above L2 will look broken.
+        </p>
+
+        <h2>Common issues &amp; troubleshooting hints</h2>
+
+        <h3>ARP resolution fails (incomplete entries)</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Connections to local peers or the default gateway time out, and you see repeated ARP requests without receiving a reply.
+            Higher-layer errors may look like “host unreachable,” “no route,” or application timeouts despite the interface being up.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            The target host is down, on a different VLAN/subnet, behind a misconfigured switch port, or blocked by filtering.
+            In virtualized environments, incorrect port-group/VLAN tagging can make the ARP broadcast never reach the actual owner.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Capture on the sender and look for repeated ARP requests for the same target IP with no corresponding reply.
+            If possible, capture near the expected responder to verify whether the request arrives there.
+          </dd>
+        </dl>
+
+        <h3>Duplicate IP address (ARP conflict)</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Connectivity to a host is intermittent, with sessions switching between two devices or failing unpredictably.
+            You may see ARP replies for the same IP coming from different MAC addresses over short periods.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Two devices are configured with the same IPv4 address, or an address was reused without clearing old state.
+            Failover systems can also temporarily present different MACs for the same IP during transitions.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            In the capture, compare ARP “is-at” replies for the conflicting IP and see whether multiple source MAC addresses appear.
+            Switch logs or ARP tables can also reveal the IP-to-MAC mapping changing repeatedly.
+          </dd>
+        </dl>
+
+        <h3>ARP spoofing / poisoning</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Traffic is redirected through an unexpected device, or users report certificate warnings, strange latency, or intermittent drops.
+            Captures may show frequent unsolicited ARP replies that “update” mappings even when no request was observed.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            A malicious or misbehaving host is sending forged ARP replies to claim ownership of another IP address (often the gateway),
+            enabling man-in-the-middle interception or disruption.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Look for ARP replies that associate the gateway IP with an unusual MAC address, or rapid changes in the gateway mapping.
+            Correlate with sudden path changes, duplicated traffic, or unexpected MAC vendor OUIs.
+          </dd>
+        </dl>
+
+        <h2>Security notes (if relevant)</h2>
+        <p>
+          ARP has no authentication; any host on the LAN can claim “I am X” by sending ARP replies. Most networks rely on design
+          and switch controls to reduce risk: segmentation (VLANs), port security, dynamic ARP inspection, and 802.1X. Higher-layer
+          protections like TLS help even if ARP is attacked, but ARP spoofing can still cause outage or forced proxies.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/dictionary.html">Back to Dictionary Index</a></li>
+
+          <li>
+            <a href="/fields.html">Key fields</a>
+            <span class="hint">(ARP operation, Sender/Target fields — Soon)</span>
+          </li>
+
+          <li>
+            <a href="/topics.html">Related topics</a>
+            <span class="hint">(ARP troubleshooting flow, ARP spoofing detection — Soon)</span>
+          </li>
+        </ul>
+
+        <!--
+        Done checklist
+        - data-ads: on
+        - 1000–1600 words: verify before publishing
+        - H2 >= 6: yes
+        - Table >= 1: yes
+        - Lists >= 2: yes
+        - Internal links >= 3: yes (dictionary/fields/topics)
+        - No 404 links: yes (Soon not linked)
+        - Wireshark filter uses ws-filter block: yes
+        - Issues use dl.issue blocks with paragraphs: yes
+        -->
+      </article>
+
+      <!-- Ad slot (bottom) -->
+      <div class="ad">Ad slot (dictionary-bottom)</div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Protocol Dictionary | Network Packet Dictionary</title>
+  <meta name="description" content="Protocol pages by layer (L2/L3/L4/L7). Practical overviews for Wireshark and real-world troubleshooting." />
+  <meta name="robots" content="index,follow" />
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <style>
+    /* Tabs */
+    .tabs {
+      display:flex;
+      flex-wrap:wrap;
+      gap: 10px;
+      margin: 10px 0 0;
+    }
+    .tab-btn{
+      appearance:none;
+      border: 1px solid rgba(0,0,0,.12);
+      background: rgba(255,255,255,.75);
+      padding: 10px 12px;
+      border-radius: 999px;
+      cursor:pointer;
+      font-weight: 900;
+      opacity: .85;
+    }
+    .tab-btn:hover{ opacity:1; }
+    .tab-btn[aria-selected="true"]{
+      opacity: 1;
+      border-color: rgba(109,94,248,.45);
+      box-shadow: 0 0 0 4px rgba(109,94,248,.16);
+      background:
+        linear-gradient(135deg, rgba(109,94,248,.18), rgba(45,226,230,.10)),
+        rgba(255,255,255,.78);
+    }
+
+    .tab-panel{ display:none; margin-top: 14px; }
+    .tab-panel.active{ display:block; }
+  </style>
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html" aria-current="page">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card hero">
+      <h1>Dictionary (Protocols by Layer)</h1>
+      <p>
+        Protocol pages explain each protocol as a whole: purpose, where it sits in the stack, a readable header overview,
+        typical Wireshark appearance, and common troubleshooting patterns. This index is organized by OSI-like layers (L2/L3/L4/L7)
+        so you can quickly jump from the capture you see to the right conceptual page. For precise meanings and values of a single
+        header element (TTL, DF, SYN, Window, RCODE, SNI), use Fields. For real-world symptoms and step-by-step verification flows,
+        use Topics.
+      </p>
+      <p class="hint">
+        In-progress entries are shown as “Soon” without links to prevent 404s. When a page becomes complete, you replace “Soon” with a link.
+      </p>
+
+      <div class="grid" style="margin-top:14px;">
+        <div class="card soft">
+          <h2>Layer Tabs</h2>
+          <div class="hint">Switch layers to filter the protocol list. Use the search to filter inside the current layer.</div>
+
+          <div class="tabs" role="tablist" aria-label="Protocol layers">
+            <button class="tab-btn" role="tab" aria-selected="true" aria-controls="panel-l2" id="tab-l2">L2</button>
+            <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-l3" id="tab-l3">L3</button>
+            <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-l4" id="tab-l4">L4</button>
+            <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-l7" id="tab-l7">L7</button>
+          </div>
+
+          <div class="search">
+            <input id="layerSearch" type="search" placeholder="Filter in current layer (e.g., arp, vlan, icmp, tcp, dns...)" autocomplete="off" />
+          </div>
+
+          <div class="smalllinks" style="margin-top:10px;">
+            <a href="/fields.html">→ Fields index</a>
+            <a href="/topics.html">→ Topics index</a>
+            <a href="/tools.html">→ Tools index</a>
+          </div>
+
+          <div class="ad">Ad slot (dictionary-top)</div>
+        </div>
+
+        <div class="card soft">
+          <h2>How to use</h2>
+          <p class="hint">
+            1) Choose the layer based on what you see in a capture (Ethernet/ARP/IP/TCP/DNS…).<br/>
+            2) Read the protocol overview page to get the full picture quickly.<br/>
+            3) Jump to Fields for exact bit sizes/values, or Topics for debugging flows.
+          </p>
+          <div class="hint">
+            Design rule: <strong>one concept per page</strong>. No duplicated explanations across multiple pages—use links instead.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panels -->
+    <section class="tab-panel active" id="panel-l2" role="tabpanel" aria-labelledby="tab-l2">
+      <div class="card">
+        <div class="section-title">
+          <span class="layer-badge"><span class="dot"></span> L2 — Data Link</span>
+        </div>
+        <ul class="list" id="list-l2">
+          <li class="item" data-k="ethernet ethernet-ii l2">
+            <span><strong><a href="/dictionary/ethernet-ii.html">Ethernet II</a></strong></span><span class="meta">Frame</span>
+          </li>
+          <li class="item soon" data-k="vlan 8021q dot1q l2">
+            <span><strong>VLAN (802.1Q)</strong> <span class="tag">Soon</span></span><span class="meta">Tag</span>
+          </li>
+          <li class="item" data-k="arp address resolution l2">
+            <span><strong><a href="/dictionary/arp.html">ARP</a></strong></span><span class="meta">IP→MAC</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="panel-l3" role="tabpanel" aria-labelledby="tab-l3">
+      <div class="card">
+        <div class="section-title">
+          <span class="layer-badge"><span class="dot"></span> L3 — Network</span>
+        </div>
+        <ul class="list" id="list-l3">
+          <li class="item" data-k="ipv4 ip l3">
+            <span><strong><a href="/dictionary/ipv4.html">IPv4</a></strong></span><span class="meta">Routing</span>
+          </li>
+          <li class="item" data-k="icmp ping l3">
+            <span><strong><a href="/dictionary/icmp.html">ICMP</a></strong></span><span class="meta">Errors</span>
+          </li>
+          <li class="item soon" data-k="vxlan gre ipsec tunnel l3">
+            <span><strong>GRE / VXLAN / IPsec</strong> <span class="tag">Soon</span></span><span class="meta">Tunnels</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="panel-l4" role="tabpanel" aria-labelledby="tab-l4">
+      <div class="card">
+        <div class="section-title">
+          <span class="layer-badge"><span class="dot"></span> L4 — Transport</span>
+        </div>
+        <ul class="list" id="list-l4">
+          <li class="item" data-k="tcp l4 reliable">
+            <span><strong><a href="/dictionary/tcp.html">TCP</a></strong></span><span class="meta">Reliable</span>
+          </li>
+          <li class="item" data-k="udp l4 datagram">
+            <span><strong><a href="/dictionary/udp.html">UDP</a></strong></span><span class="meta">Datagram</span>
+          </li>
+          <li class="item soon" data-k="quic l4 udp transport">
+            <span><strong>QUIC</strong> <span class="tag">Soon</span></span><span class="meta">Over UDP</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="panel-l7" role="tabpanel" aria-labelledby="tab-l7">
+      <div class="card">
+        <div class="section-title">
+          <span class="layer-badge"><span class="dot"></span> L7 — Application</span>
+        </div>
+        <ul class="list" id="list-l7">
+          <li class="item" data-k="dns l7 name">
+            <span><strong><a href="/dictionary/dns.html">DNS</a></strong></span><span class="meta">Names</span>
+          </li>
+          <li class="item" data-k="dhcp l7 config">
+            <span><strong><a href="/dictionary/dhcp.html">DHCP</a></strong></span><span class="meta">Config</span>
+          </li>
+          <li class="item" data-k="tls l7 crypto https">
+            <span><strong><a href="/dictionary/tls.html">TLS</a></strong></span><span class="meta">Crypto</span>
+          </li>
+          <li class="item" data-k="http http1-1 l7 web">
+            <span><strong><a href="/dictionary/http1-1.html">HTTP/1.1</a></strong></span><span class="meta">Web</span>
+          </li>
+        </ul>
+        <div class="ad">Ad slot (dictionary-bottom)</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

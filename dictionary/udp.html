@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>UDP (User Datagram Protocol) | Network Packet Dictionary</title>
+  <meta name="description" content="UDP (User Datagram Protocol) explained: purpose, layer placement, header overview, typical flow, Wireshark appearance, and common troubleshooting patterns." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <!-- Dictionary P0 v1.3: SAFE SCOPE (ONLY inside <article class="content">) -->
+  <style>
+    /* Wireshark filter block (scoped) */
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    /* Issues readability (scoped) */
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+    .content dl.issue{
+      margin:0.6em 0 1.4em;
+      padding:0.9em 1em;
+      border-radius:10px;
+      background:rgba(0,0,0,0.04);
+      border:1px solid rgba(0,0,0,0.08);
+    }
+    .content dl.issue dt{
+      font-weight:900;
+      margin-top:0.65em;
+    }
+    .content dl.issue dt:first-child{
+      margin-top:0;
+    }
+    .content dl.issue dd{
+      margin:0.2em 0 0.45em;
+      opacity:0.95;
+      line-height:1.65;
+    }
+    .content dl.issue dd + dt{
+      margin-top:0.75em;
+    }
+
+    /* Ordered list emphasis (scoped) */
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+
+  <!-- v1.3 rule: AdSense script must NOT be embedded in dictionary pages -->
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <!-- Ad slot (top) -->
+      <div class="ad">Ad slot (dictionary-top)</div>
+
+      <article class="content">
+        <h1>UDP (User Datagram Protocol)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          UDP, the User Datagram Protocol, is a connectionless transport protocol that delivers discrete messages called
+          datagrams. Unlike TCP, UDP does not provide built-in retransmission, ordering, congestion control, or a byte-stream
+          abstraction. Instead, it keeps overhead low and lets applications decide how to handle loss, duplication, and
+          reordering. This makes UDP a strong fit for real-time traffic and simple request/response protocols where low
+          latency and simplicity matter.
+        </p>
+        <p>
+          A useful mental model is: UDP is “send a message and hope for the best” at the transport layer. The network may
+          deliver the datagram quickly, deliver it late, deliver it out of order relative to other datagrams, or drop it
+          entirely. UDP does not attempt to correct those outcomes. When applications need reliability, they either implement
+          their own retries and sequencing (common in lightweight protocols) or use an application transport that builds these
+          features on top of UDP.
+        </p>
+        <p>
+          Many core network services use UDP because the messages are small, frequent, and naturally request/response.
+          DNS commonly uses UDP for queries, DHCP uses UDP for address configuration, and telemetry protocols often choose UDP
+          for low overhead. Modern web transport has also evolved here: QUIC runs over UDP so it can provide encryption and
+          reliability in user space with different handshake and recovery behavior than traditional TCP+TLS stacks.
+        </p>
+
+        <h2>Where it sits in the stack (Layer &amp; usage)</h2>
+        <p>
+          <strong>L4 — Transport layer.</strong> UDP sits above IPv4/IPv6 and below application protocols. It is identified by
+          source and destination ports and provides basic demultiplexing (which app receives the datagram) rather than
+          connection state. Because it is connectionless, endpoints do not establish a handshake before sending; the first
+          datagram can carry application data immediately.
+        </p>
+        <ul>
+          <li><strong>Below:</strong> IP (IPv4/IPv6) provides addressing and routing; UDP is carried as IP payload.</li>
+          <li><strong>Above:</strong> Application protocols and transports such as DNS, DHCP, RTP, QUIC, syslog (common cases).</li>
+          <li><strong>Where used:</strong> Low-latency apps, multicast/broadcast use cases, lightweight request/response.</li>
+        </ul>
+        <p>
+          UDP’s simplicity shifts responsibility upward. If an application needs reliability, it may implement timeouts and
+          retries, add identifiers to correlate responses, or incorporate sequencing. For media, protocols may tolerate some
+          loss and instead focus on jitter handling. For QUIC, reliability and congestion control are implemented in the
+          application transport while still using UDP for reachability across the internet.
+        </p>
+        <p>
+          Operationally, UDP is still affected by “stateful” devices. NAT and firewalls often track UDP flows using short
+          idle timeouts, and some networks treat UDP more strictly than TCP. That means a UDP app can fail intermittently
+          when idle, even though UDP itself does not create state—because the network devices around it do.
+        </p>
+
+        <h2>Header overview (Fields at a glance)</h2>
+        <p>
+          UDP’s header is minimal: source port, destination port, length, and checksum. That simplicity is why UDP is popular
+          for lightweight protocols and environments where every byte of overhead matters. The tradeoff is that most “behavior”
+          is defined by the application protocol carried inside the UDP payload, not by UDP itself.
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Size</th>
+              <th>Purpose</th>
+              <th>Common values / notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Source port</td>
+              <td>2 bytes</td>
+              <td>Return port for responses</td>
+              <td>Often ephemeral; may be 0 in some cases</td>
+            </tr>
+            <tr>
+              <td>Destination port</td>
+              <td>2 bytes</td>
+              <td>Identifies receiving service</td>
+              <td>DNS: 53, DHCP server: 67, DHCP client: 68, QUIC often 443</td>
+            </tr>
+            <tr>
+              <td>Length</td>
+              <td>2 bytes</td>
+              <td>UDP header + payload size</td>
+              <td>Helps detect truncation; limited by IP packet size</td>
+            </tr>
+            <tr>
+              <td>Checksum</td>
+              <td>2 bytes</td>
+              <td>Integrity check</td>
+              <td>Optional in IPv4 (historically), required in IPv6</td>
+            </tr>
+            <tr>
+              <td>Payload</td>
+              <td>variable</td>
+              <td>Application message</td>
+              <td>May be lost/reordered without UDP-level recovery</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it works (Typical flow)</h2>
+        <ol>
+          <li>A client sends a UDP datagram to a server IP and destination port (no handshake required).</li>
+          <li>The network delivers it best-effort; the datagram may be dropped, duplicated, delayed, or reordered.</li>
+          <li>The server receives the datagram as a complete message and processes it as one unit.</li>
+          <li>The server may reply with a UDP datagram back to the client’s source IP and source port.</li>
+          <li>If reliability is needed, the client implements timeouts and retries at the application layer.</li>
+          <li>For multicast/broadcast, one sender may reach many receivers in the same domain (behavior depends on L2/L3 scope).</li>
+        </ol>
+        <ul>
+          <li><strong>No handshake:</strong> Low startup latency, but less built-in state and fewer guarantees.</li>
+          <li><strong>Middleboxes still matter:</strong> NAT/firewalls may track UDP “flows” with short timeouts.</li>
+          <li><strong>Message-oriented:</strong> The receiver gets datagrams, not a stream; message boundaries are preserved.</li>
+        </ul>
+        <p>
+          When debugging UDP, it helps to decide which layer provides reliability. For DNS, the client typically retries.
+          For media, the app may accept some loss. For QUIC, the transport itself handles retransmission and congestion control,
+          but UDP still influences how packets traverse NATs and firewalls.
+        </p>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>udp.port == 53</code></pre>
+
+        <p><strong>What you typically see:</strong></p>
+        <ul>
+          <li>UDP header with source/destination ports and length, followed by immediate application decoding (e.g., DNS) when recognized.</li>
+          <li>Request/response pairs that are correlated by application-level IDs rather than by a transport connection.</li>
+          <li>ICMP errors associated with UDP, such as “Port unreachable,” when the destination port is closed.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> When debugging “no response,” check for ICMP errors like “Port unreachable.”
+          Filter <code>icmp</code> alongside UDP and look for the quoted original UDP ports inside the ICMP payload.
+        </p>
+        <p>
+          If you see outgoing requests but no replies, the failure could be on the network path, on the server (service not
+          listening), or at a middlebox that is filtering UDP. Capturing at two points (client side and near the server) is
+          often the fastest way to determine whether the request ever arrives.
+        </p>
+
+        <h2>Common issues &amp; troubleshooting hints</h2>
+
+        <h3>NAT/Firewall timeouts causing intermittent failures</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Communication works at first, but after a period of idle time responses stop arriving. Applications may appear to
+            “hang” until the client restarts traffic or reinitializes its session.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            A NAT or firewall flow entry for UDP expires due to an idle timeout. When the server replies later, the return
+            traffic no longer matches a permitted state and is dropped.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Compare the timing of the last successful exchange and the first failed exchange. If outbound requests continue
+            but inbound responses suddenly stop after inactivity, a state timeout is a strong candidate. Captures on both
+            sides of the NAT boundary can show whether replies exist but are being dropped.
+          </dd>
+        </dl>
+
+        <h3>Packet loss impacting application behavior</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Audio/video glitches, missing telemetry, inconsistent query results, or “sometimes it works” behavior. UDP-based
+            apps may show jitter, stutter, or gaps rather than a clean disconnect.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Congestion, Wi-Fi interference, overloaded queues, or competing traffic on the path. Because UDP does not retransmit,
+            the application experiences the loss directly unless it adds its own recovery mechanism.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Look for gaps in expected application-level sequencing (if present) and increased delay variation. If the application
+            has identifiers, check for missing IDs over time. Compare sender vs receiver captures to distinguish true network
+            loss from local capture loss.
+          </dd>
+        </dl>
+
+        <h3>Fragmentation-related drops for large UDP payloads</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Small UDP requests succeed, but larger ones fail silently or only succeed on some networks. This is common for
+            protocols that can generate large replies (some DNS responses, VPN encapsulation, or custom UDP payloads).
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            IP fragmentation is occurring and fragments are dropped or filtered on the path, or path MTU behavior is not
+            well-handled. Some networks block fragments or ICMP feedback, making the failure appear as “no response.”
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Inspect IP-layer indications of fragmentation or unusually large UDP payload sizes. Look for ICMP “fragmentation needed”
+            style messages (if present) or consistent failure only above a certain size threshold. Capturing on a different
+            interface (before/after a tunnel or VPN) can reveal where the packet grows beyond MTU.
+          </dd>
+        </dl>
+
+        <h2>Security notes (if relevant)</h2>
+        <p>
+          UDP is frequently used in amplification and reflection attacks because it can be spoofed in some environments and
+          because some UDP services respond with larger payloads. Defensive practices include avoiding unnecessary exposure of
+          UDP services, applying rate limits, and ensuring services are not open reflectors (for example, not running an open DNS resolver).
+          Encryption and authentication are provided by higher-layer protocols (such as QUIC or DTLS) rather than UDP itself.
+        </p>
+        <p>
+          From a capture perspective, suspicious UDP traffic often appears as high-rate small requests with large responses,
+          or as unexpected UDP services on public interfaces. Separating “legitimate low-latency UDP” from “abuse patterns”
+          typically depends on ports, payload dissector results, and traffic volume over time.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/dictionary.html">Back to Dictionary Index</a></li>
+
+          <li>
+            <a href="/fields.html">Key fields</a>
+            <span class="hint">(UDP length, UDP checksum — Soon)</span>
+          </li>
+
+          <li>
+            <a href="/topics.html">Related topics</a>
+            <span class="hint">(UDP vs TCP tradeoffs, NAT UDP timeout behavior, Fragmentation considerations — Soon)</span>
+          </li>
+        </ul>
+
+        <!--
+        Done checklist (Dictionary P0 v1.3)
+        - Safe-scope CSS: YES (all selectors under .content)
+        - data-ads: on
+        - 1000–1600 words: verify before publishing
+        - H1 = 1: yes
+        - H2 >= 6: yes
+        - Table >= 1: yes
+        - Lists >= 2: yes
+        - Internal links >= 3: yes (dictionary/fields/topics)
+        - Soon is not linked: yes
+        - Wireshark filter uses <pre class="ws-filter">: yes
+        - Issues use <dl class="issue"> blocks: yes
+        - AdSense script embedded here: NO (required)
+        -->
+      </article>
+
+      <!-- Ad slot (bottom) -->
+      <div class="ad">Ad slot (dictionary-bottom)</div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

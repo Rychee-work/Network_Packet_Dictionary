@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Topics Index | Network Packet Dictionary</title>
+  <meta name="description" content="Network topics and troubleshooting guides: why issues happen and how to verify them with packet captures." />
+  <meta name="robots" content="index,follow" />
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <style>
+    /* Tabs (same pattern as dictionary) */
+    .tabs {
+      display:flex;
+      flex-wrap:wrap;
+      gap: 10px;
+      margin: 10px 0 0;
+    }
+    .tab-btn{
+      appearance:none;
+      border: 1px solid rgba(0,0,0,.12);
+      background: rgba(255,255,255,.75);
+      padding: 10px 12px;
+      border-radius: 999px;
+      cursor:pointer;
+      font-weight: 900;
+      opacity: .85;
+    }
+    .tab-btn:hover{ opacity:1; }
+    .tab-btn[aria-selected="true"]{
+      opacity: 1;
+      border-color: rgba(109,94,248,.45);
+      box-shadow: 0 0 0 4px rgba(109,94,248,.16);
+      background:
+        linear-gradient(135deg, rgba(109,94,248,.18), rgba(45,226,230,.10)),
+        rgba(255,255,255,.78);
+    }
+    .tab-panel{ display:none; margin-top: 14px; }
+    .tab-panel.active{ display:block; }
+  </style>
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html" aria-current="page">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card hero">
+      <h1>Topics</h1>
+      <p>
+        Topic pages explain real-world network behavior as a story: what you see, why it happens, the packet flow,
+        success vs failure patterns, and how to confirm it in Wireshark or tcpdump.
+      </p>
+      <p class="hint">
+        Each topic must link to at least one protocol page and one field page.
+      </p>
+
+      <div class="grid" style="margin-top:14px;">
+        <div class="card soft">
+          <h2>Topic Tabs</h2>
+          <div class="hint">Switch categories. Search filters only inside the current tab.</div>
+
+          <div class="tabs" role="tablist" aria-label="Topic groups">
+            <button class="tab-btn" role="tab" aria-selected="true" aria-controls="panel-tcp" id="tab-tcp">TCP</button>
+            <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-dns" id="tab-dns">DNS</button>
+            <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-ipv4" id="tab-ipv4">IPv4</button>
+            <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-security" id="tab-security">Security</button>
+          </div>
+
+          <div class="search">
+            <input id="layerSearch" type="search" placeholder="Filter topics (e.g., handshake, timeout, mtu, spoofing...)" autocomplete="off" />
+          </div>
+
+          <div class="smalllinks" style="margin-top:10px;">
+            <a href="/dictionary.html">→ Protocol Dictionary</a>
+            <a href="/fields.html">→ Fields index</a>
+            <a href="/tools.html">→ Tools index</a>
+          </div>
+
+          <div class="ad">Ad slot (topics-top)</div>
+        </div>
+
+        <div class="card soft">
+          <h2>How to use</h2>
+          <p class="hint">
+            1) Start from the symptom (timeout, retransmission, MTU issues).<br/>
+            2) Follow the packet flow checklist in the topic page.<br/>
+            3) Jump to protocol/field pages for exact details.
+          </p>
+          <div class="hint">
+            Every topic should include success vs failure patterns and a verification checklist.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panels -->
+    <section class="tab-panel active" id="panel-tcp" role="tabpanel" aria-labelledby="tab-tcp">
+      <div class="card">
+        <div class="section-title"><span class="tag">TCP topics</span></div>
+        <ul class="list">
+          <li class="item soon" data-k="tcp three way handshake syn syn-ack ack">
+            <span><strong>TCP Three-Way Handshake</strong> <span class="tag">Soon</span></span><span class="meta">Basics</span>
+          </li>
+          <li class="item soon" data-k="tcp retransmission rto fast retransmit">
+            <span><strong>TCP Retransmission</strong> <span class="tag">Soon</span></span><span class="meta">Loss</span>
+          </li>
+          <li class="item soon" data-k="tcp zero window receive window">
+            <span><strong>TCP Zero Window</strong> <span class="tag">Soon</span></span><span class="meta">Flow control</span>
+          </li>
+          <li class="item soon" data-k="tcp reset rst connection reset">
+            <span><strong>TCP RST (Connection Reset)</strong> <span class="tag">Soon</span></span><span class="meta">Abort</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="panel-dns" role="tabpanel" aria-labelledby="tab-dns">
+      <div class="card">
+        <div class="section-title"><span class="tag">DNS topics</span></div>
+        <ul class="list">
+          <li class="item soon" data-k="dns timeout no response">
+            <span><strong>DNS Timeout</strong> <span class="tag">Soon</span></span><span class="meta">No reply</span>
+          </li>
+          <li class="item soon" data-k="dns nxdomain rcode">
+            <span><strong>NXDOMAIN vs SERVFAIL</strong> <span class="tag">Soon</span></span><span class="meta">Errors</span>
+          </li>
+          <li class="item soon" data-k="dns cache poisoning">
+            <span><strong>DNS Cache Poisoning (Overview)</strong> <span class="tag">Soon</span></span><span class="meta">Security</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="panel-ipv4" role="tabpanel" aria-labelledby="tab-ipv4">
+      <div class="card">
+        <div class="section-title"><span class="tag">IPv4 topics</span></div>
+        <ul class="list">
+          <li class="item soon" data-k="path mtu discovery pmtud fragmentation df icmp">
+            <span><strong>Path MTU Discovery</strong> <span class="tag">Soon</span></span><span class="meta">MTU</span>
+          </li>
+          <li class="item soon" data-k="icmp fragmentation needed df">
+            <span><strong>ICMP Fragmentation Needed</strong> <span class="tag">Soon</span></span><span class="meta">PMTUD</span>
+          </li>
+          <li class="item soon" data-k="ttl exceeded traceroute">
+            <span><strong>TTL Exceeded and Traceroute</strong> <span class="tag">Soon</span></span><span class="meta">Routing</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="panel-security" role="tabpanel" aria-labelledby="tab-security">
+      <div class="card">
+        <div class="section-title"><span class="tag">Security topics</span></div>
+        <ul class="list">
+          <li class="item soon" data-k="arp spoofing poisoning man in the middle">
+            <span><strong>ARP Spoofing</strong> <span class="tag">Soon</span></span><span class="meta">L2 attack</span>
+          </li>
+          <li class="item soon" data-k="tls sni inspection">
+            <span><strong>TLS SNI and Traffic Inspection</strong> <span class="tag">Soon</span></span><span class="meta">TLS</span>
+          </li>
+          <li class="item soon" data-k="dns hijack">
+            <span><strong>DNS Hijacking (Overview)</strong> <span class="tag">Soon</span></span><span class="meta">DNS</span>
+          </li>
+        </ul>
+
+        <div class="ad">Ad slot (topics-bottom)</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

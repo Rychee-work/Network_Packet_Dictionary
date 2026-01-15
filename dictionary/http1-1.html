@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>HTTP/1.1 (Hypertext Transfer Protocol 1.1) | Network Packet Dictionary</title>
+  <meta name="description" content="HTTP/1.1 (Hypertext Transfer Protocol 1.1) explained: purpose, layer placement, message structure overview, typical flow, Wireshark appearance, and common troubleshooting patterns." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <!-- Dictionary P0 v1.3: SAFE SCOPE (ONLY inside <article class="content">) -->
+  <style>
+    /* Wireshark filter block (scoped) */
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    /* Issues readability (scoped) */
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+    .content dl.issue{
+      margin:0.6em 0 1.4em;
+      padding:0.9em 1em;
+      border-radius:10px;
+      background:rgba(0,0,0,0.04);
+      border:1px solid rgba(0,0,0,0.08);
+    }
+    .content dl.issue dt{
+      font-weight:900;
+      margin-top:0.65em;
+    }
+    .content dl.issue dt:first-child{
+      margin-top:0;
+    }
+    .content dl.issue dd{
+      margin:0.2em 0 0.45em;
+      opacity:0.95;
+      line-height:1.65;
+    }
+    .content dl.issue dd + dt{
+      margin-top:0.75em;
+    }
+
+    /* Ordered list emphasis (scoped) */
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+
+  <!-- v1.3 rule: AdSense script must NOT be embedded in dictionary pages -->
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <!-- Ad slot (top) -->
+      <div class="ad">Ad slot (dictionary-top)</div>
+
+      <article class="content">
+        <h1>HTTP/1.1 (Hypertext Transfer Protocol 1.1)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          HTTP/1.1, Hypertext Transfer Protocol version 1.1, is the widely deployed application-layer protocol that powers
+          classic web browsing and a large share of REST-style APIs. It defines how a client requests a resource (a page,
+          JSON response, file, or API action) and how a server replies with a status code, headers, and an optional body.
+          HTTP/1.1 is <strong>text-based</strong>, <strong>request/response oriented</strong>, and most commonly runs over
+          a <strong>persistent TCP connection</strong> so multiple requests can reuse one connection.
+        </p>
+        <p>
+          Although modern web stacks often use HTTP/2 or HTTP/3, HTTP/1.1 remains foundational. You still encounter it at
+          edges and fallback paths (proxies, CDNs, gateways), inside enterprise environments, and in many tools and scripts.
+          Understanding HTTP/1.1 makes packet captures easier to interpret because its messages are readable on plaintext
+          traffic and its behaviors map cleanly to what TCP is doing underneath.
+        </p>
+        <p>
+          In troubleshooting, HTTP/1.1 helps answer “what did the client ask for” and “what did the server decide.”
+          Many real-world failures are not “the network is down,” but mismatches in host routing, redirects, caching rules,
+          or body framing. In other words, the flow can be healthy at TCP level while the application behavior is still wrong.
+        </p>
+        <p>
+          A useful mental model is: TCP delivers bytes reliably, TLS (if present) protects them, and HTTP/1.1 imposes a
+          structured conversation on those bytes: request line, headers, and body. When things go wrong, you decide whether
+          the problem is in the <em>transport</em> (loss, resets, latency) or in the <em>message semantics</em> (status codes,
+          headers, and policy).
+        </p>
+
+        <h2>Where it sits in the stack (Layer &amp; usage)</h2>
+        <p>
+          <strong>L7 — Application layer.</strong> HTTP/1.1 sits above transport (typically TCP) and is often paired with TLS
+          for confidentiality and integrity (HTTPS). Operationally, it is frequently mediated by reverse proxies, load balancers,
+          and CDNs, which can affect what you see in captures depending on where you capture.
+        </p>
+        <ul>
+          <li><strong>Transport:</strong> Usually TCP (port 80) or TCP + TLS for HTTPS (port 443).</li>
+          <li><strong>Used by:</strong> Websites, REST APIs, internal services, reverse proxies, gateways, CDNs.</li>
+          <li><strong>Key behaviors:</strong> Persistent connections, Host header for virtual hosting, caching semantics, redirects.</li>
+        </ul>
+        <p>
+          In packet captures, HTTP/1.1 is easiest to read when it is plaintext (port 80 or internal cleartext segments).
+          When HTTPS is used, HTTP/1.1 messages are inside TLS encryption, so you often rely on TLS metadata and timing patterns
+          unless you capture at the endpoint with decryption configured.
+        </p>
+        <p>
+          HTTP/1.1 also inherits transport-level constraints. A single TCP connection carries the byte stream, so if a response
+          is slow or a packet is lost, other requests on that same connection can be delayed. This “one stream per connection”
+          behavior is a key reason HTTP/2 introduced multiplexing, but HTTP/1.1 is still widely used and often appears at boundaries.
+        </p>
+
+        <h2>Header overview (Fields at a glance)</h2>
+        <p>
+          HTTP/1.1 messages are structured as a <strong>start line</strong> (request line or status line), a set of
+          <strong>headers</strong>, and an optional <strong>body</strong>. Many important “fields” are headers that influence
+          routing, caching, authentication, and body framing. This section stays at the existence/role level; deep catalogs
+          belong on Fields pages later.
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Size</th>
+              <th>Purpose</th>
+              <th>Common values / notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Request line</td>
+              <td>variable</td>
+              <td>Method + path + version</td>
+              <td>GET/POST/PUT/DELETE; includes “HTTP/1.1” version token</td>
+            </tr>
+            <tr>
+              <td>Status line</td>
+              <td>variable</td>
+              <td>Response status</td>
+              <td>200, 301, 404, 500; reason phrase is informational</td>
+            </tr>
+            <tr>
+              <td>Host</td>
+              <td>variable</td>
+              <td>Virtual host routing</td>
+              <td>Critical for modern hosting; wrong Host can return the wrong site or 400</td>
+            </tr>
+            <tr>
+              <td>Content-Length / Transfer-Encoding</td>
+              <td>variable</td>
+              <td>Body framing</td>
+              <td>Chunked encoding is common; framing mismatches can cause truncation symptoms</td>
+            </tr>
+            <tr>
+              <td>Connection</td>
+              <td>variable</td>
+              <td>Keep-alive behavior</td>
+              <td>HTTP/1.1 defaults to persistent; “close” ends after response</td>
+            </tr>
+            <tr>
+              <td>General headers</td>
+              <td>variable</td>
+              <td>Metadata and control</td>
+              <td>User-Agent, Accept, Cache-Control, Authorization, Cookie, etc.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it works (Typical flow)</h2>
+        <ol>
+          <li>The client resolves the hostname (DNS) and connects to the server (TCP; plus TLS if HTTPS).</li>
+          <li>The client sends an HTTP request line and headers (e.g., GET /, Host: example.com).</li>
+          <li>The server replies with a status line (e.g., 200 OK) and headers, then sends the body if applicable.</li>
+          <li>The connection may stay open for more requests (keep-alive) to avoid repeated TCP/TLS setup.</li>
+          <li>Clients may reuse the connection for additional resources, but long responses can delay later requests on the same stream.</li>
+        </ol>
+        <ul>
+          <li><strong>Redirects:</strong> 301/302 responses instruct the client to request a new URL.</li>
+          <li><strong>Caching:</strong> Cache-Control, ETag, and related headers influence reuse and revalidation.</li>
+          <li><strong>Framing matters:</strong> The receiver must know where the body ends (length or chunked framing).</li>
+        </ul>
+        <p>
+          In practice, the “shape” of an HTTP/1.1 conversation depends on intermediaries. Reverse proxies may add or rewrite
+          headers, CDNs may respond from cache, and load balancers may route requests based on Host or path. When debugging,
+          it helps to decide whether you are observing client-to-edge traffic, edge-to-origin traffic, or internal service hops.
+        </p>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>http</code></pre>
+
+        <p><strong>What you typically see:</strong></p>
+        <ul>
+          <li>Readable request lines, status codes, and headers when the traffic is plaintext.</li>
+          <li>Host and User-Agent headers are often the fastest way to confirm “which site” and “which client.”</li>
+          <li>Body framing via Content-Length or Transfer-Encoding: chunked, plus TCP reassembly for full messages.</li>
+          <li>Useful follow-up views like “Follow HTTP Stream” for message context in a single conversation.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> For performance issues, start with timing: identify gaps between request and response,
+          then check whether multiple requests are waiting behind one slow response on the same TCP connection (head-of-line behavior).
+        </p>
+        <p>
+          If you only have HTTPS traffic, you typically filter on TLS instead and reason about the application indirectly:
+          handshake success/failure, server name (if visible), and response timing. That is why HTTP/1.1 troubleshooting often benefits
+          from capturing at an endpoint or at a trusted proxy that can log the HTTP layer.
+        </p>
+
+        <h2>Common issues &amp; troubleshooting hints</h2>
+
+        <h3>400 Bad Request or wrong site due to Host/header routing</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            The server returns 400 Bad Request, or the client receives content for a different site than expected. This is common
+            in environments with shared hosting, reverse proxies, or gateway routing where the Host header determines the target.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Missing or incorrect Host header, proxy rewriting, or a mismatch between the requested URL and the Host value.
+            Some servers enforce strict header validation and reject malformed requests early.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Inspect the request headers in the capture. Compare the URL/target you intended with the Host header actually sent.
+            If a proxy is present, compare captures on both sides to see whether headers are being rewritten or normalized.
+          </dd>
+        </dl>
+
+        <h3>Stalled downloads or truncated responses (body framing problems)</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            A download stops early, the client waits indefinitely, or the page appears partially loaded. This can look like a
+            network issue, but it often happens when the receiver cannot correctly determine the end of the response body.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Content-Length mismatch, chunked transfer encoding parsing issues, or premature connection termination. Transport loss
+            can amplify the symptom by delaying retransmissions, but the core problem can be incorrect framing at the HTTP layer.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Compare declared Content-Length to the bytes actually delivered (as reassembled by Wireshark). If Transfer-Encoding: chunked
+            is used, look for incomplete or malformed chunk boundaries. Also check whether the server or an intermediate closed the TCP
+            connection before the body completed.
+          </dd>
+        </dl>
+
+        <h3>Redirect loops or cache misbehavior during navigation</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            The client repeatedly receives 301/302 responses, navigation loops occur, or content never “sticks” in cache.
+            Users experience repeated logins, repeated redirects to the same endpoint, or inconsistent content.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Misconfigured redirect rules (HTTP↔HTTPS toggles), conflicting canonical host policies (www vs apex),
+            or incorrect cache headers causing unwanted revalidation or bypass. Proxies and CDNs can magnify these effects.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Trace the request/response chain and inspect Location headers. Compare Host, scheme, and path across hops.
+            Check Cache-Control/ETag headers to see whether the client should reuse content or revalidate on every load.
+          </dd>
+        </dl>
+
+        <h2>Security notes (if relevant)</h2>
+        <p>
+          Plain HTTP/1.1 provides no confidentiality or integrity; traffic can be observed or modified on the path. HTTPS
+          (HTTP over TLS) protects the content and most headers from passive observation, though some metadata may still be
+          visible depending on the deployment. For modern systems, HTTPS is generally recommended even for internal services
+          when feasible and operationally appropriate.
+        </p>
+        <p>
+          From an analysis perspective, remember that “HTTP problems” may be policy problems. Security controls such as WAFs,
+          gateway filters, and authentication proxies can generate HTTP status codes that look like application failures.
+          When a response is blocked, the status code and headers often provide the clearest signal of which layer made the decision.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/dictionary.html">Back to Dictionary Index</a></li>
+
+          <li>
+            <a href="/fields.html">Key fields</a>
+            <span class="hint">(HTTP Host header, Content-Length vs Chunked — Soon)</span>
+          </li>
+
+          <li>
+            <a href="/topics.html">Related topics</a>
+            <span class="hint">(Redirect chains analysis, HTTP keep-alive behavior — Soon)</span>
+          </li>
+        </ul>
+
+        <!--
+        Done checklist (Dictionary P0 v1.3)
+        - Safe-scope CSS: YES (all selectors under .content)
+        - data-ads: on
+        - 1000–1600 words: verify before publishing
+        - H1 = 1: yes
+        - H2 >= 6: yes
+        - Table >= 1: yes
+        - Lists >= 2: yes
+        - Internal links >= 3: yes (dictionary/fields/topics)
+        - Soon is not linked: yes
+        - Wireshark filter uses <pre class="ws-filter">: yes
+        - Issues use <dl class="issue"> blocks: yes
+        - AdSense script embedded here: NO (required)
+        -->
+      </article>
+
+      <!-- Ad slot (bottom) -->
+      <div class="ad">Ad slot (dictionary-bottom)</div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

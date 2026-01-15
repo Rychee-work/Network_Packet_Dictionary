@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>Ethernet II (DIX Ethernet) | Network Packet Dictionary</title>
+  <meta name="description" content="Ethernet II (DIX Ethernet) explained: purpose, layer placement, header overview, typical flow, Wireshark appearance, and common troubleshooting patterns." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <div class="ad">Ad slot (dictionary-top)</div>
+
+      <article class="content">
+        <h1>Ethernet II (DIX Ethernet)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          Ethernet II—also called DIX Ethernet (named after DEC, Intel, and Xerox)—is the dominant Ethernet frame format
+          used on modern wired LANs. It defines how data is wrapped into a Layer 2 frame so devices in the same broadcast
+          domain can deliver payloads to the next protocol layer reliably and efficiently.
+        </p>
+        <p>
+          The key feature that distinguishes Ethernet II from older IEEE 802.3 LLC/SNAP framing is the
+          <strong>EtherType</strong> field. EtherType tells the receiver what protocol is carried inside the frame
+          (for example IPv4, ARP, IPv6, or VLAN-tagged traffic). In practice, most packets you capture on a typical LAN
+          will be Ethernet II frames, even when the higher-layer protocols vary (TCP, UDP, DNS, TLS, and more).
+        </p>
+        <p>
+          In Wireshark, “Ethernet II” is the envelope that makes higher layers visible. If you understand the Ethernet II
+          header and what it can and cannot do, you can quickly separate link-layer problems (switching, VLANs, loops)
+          from network/transport/application issues above it.
+        </p>
+
+        <h2>Where it sits in the stack (Layer &amp; usage)</h2>
+        <p>
+          <strong>L2 — Data Link layer.</strong> Ethernet II sits above physical signaling and below network-layer payloads.
+          Its job is local delivery within a broadcast domain (often a single VLAN), not end-to-end routing across the internet.
+        </p>
+        <ul>
+          <li><strong>Below:</strong> Physical layer signaling over copper or fiber (Wi-Fi uses a different L2 framing model).</li>
+          <li><strong>Above:</strong> Network-layer payloads such as IPv4, IPv6, ARP, and VLAN-tagged frames (802.1Q).</li>
+          <li><strong>Where used:</strong> Switch-based LANs, enterprise networks, home routers/switches, virtualization bridges,
+            and many data-center fabrics.</li>
+        </ul>
+        <p>
+          Ethernet frames are forwarded by switches using MAC address learning. When traffic must leave the local network,
+          Ethernet carries the packet to a default gateway (router) as the next hop. The router then makes Layer 3 decisions
+          and sends new Ethernet frames on the next link.
+        </p>
+
+        <h2>Header overview (Fields at a glance)</h2>
+        <p>
+          Ethernet II is intentionally simple. It identifies destination and source MAC addresses, indicates the payload type
+          via EtherType, then carries the payload. Error detection exists at the link/physical boundary, but many NICs do not
+          include that information in captures.
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Size</th>
+              <th>Purpose</th>
+              <th>Common values / notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Destination MAC</td>
+              <td>6 bytes</td>
+              <td>Receiver hardware address on the LAN</td>
+              <td>Unicast, multicast, or broadcast (<code>ff:ff:ff:ff:ff:ff</code>)</td>
+            </tr>
+            <tr>
+              <td>Source MAC</td>
+              <td>6 bytes</td>
+              <td>Sender hardware address on the LAN</td>
+              <td>Physical NIC, virtual NIC, or L2 gateway interface</td>
+            </tr>
+            <tr>
+              <td>EtherType</td>
+              <td>2 bytes</td>
+              <td>Identifies the encapsulated protocol</td>
+              <td>IPv4 (<code>0x0800</code>), ARP (<code>0x0806</code>), IPv6 (<code>0x86DD</code>), VLAN (<code>0x8100</code>)</td>
+            </tr>
+            <tr>
+              <td>Payload</td>
+              <td>variable</td>
+              <td>Encapsulated protocol data</td>
+              <td>May be padded to meet minimum Ethernet frame size</td>
+            </tr>
+            <tr>
+              <td>FCS</td>
+              <td>4 bytes</td>
+              <td>Error detection (CRC)</td>
+              <td>Often stripped before capture; errors show up on switch/NIC counters</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it works (Typical flow)</h2>
+        <ol>
+          <li>Determine the next hop (local destination vs. a gateway/router).</li>
+          <li>Resolve the destination MAC address for that next hop (commonly via ARP for IPv4).</li>
+          <li>Build the Ethernet II frame: destination MAC, source MAC, and EtherType.</li>
+          <li>A switch forwards the frame based on its learned MAC table (or floods if unknown).</li>
+          <li>The receiver checks EtherType and passes the payload to the correct upper-layer protocol.</li>
+        </ol>
+        <ul>
+          <li><strong>Unicast:</strong> Delivered toward a single receiver MAC (one port on a switch).</li>
+          <li><strong>Broadcast:</strong> Delivered to all ports in the same broadcast domain/VLAN.</li>
+          <li><strong>Multicast:</strong> Delivered based on multicast handling rules.</li>
+        </ul>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>eth.type == 0x0800</code></pre>
+
+        <ul>
+          <li>“Ethernet II” appears as the first decoded header, showing source/destination MAC addresses.</li>
+          <li>Vendor names may be displayed based on the MAC OUI (helpful, but not proof of device identity).</li>
+          <li>If VLAN tagging is present, you’ll see 802.1Q information between Ethernet and the payload protocol.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> If you see unexpected VLAN tags, check for <code>eth.type == 0x8100</code> and the VLAN ID.
+          It often tells you whether your capture point is before or after tagging/untagging on a switch or host.
+        </p>
+
+        <h2>Common issues &amp; troubleshooting hints</h2>
+
+        <h3>Broadcast storms</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            The network becomes noticeably slow or unresponsive, with a continuous flood of broadcast frames visible in packet
+            captures and interface statistics. Users often report timeouts, delayed responses, or “everything is slow” symptoms
+            that affect many hosts at once.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Layer 2 loops caused by missing or misconfigured loop-prevention mechanisms (for example, spanning-tree issues),
+            or incorrect bridging that replicates frames indefinitely inside the same broadcast domain.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Filter for broadcast destination MAC addresses and observe the frame rate over time. A persistently high and steady
+            broadcast rate—especially across many different sources—strongly suggests a broadcast storm rather than a single noisy host.
+          </dd>
+        </dl>
+
+        <h3>MAC address flapping</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Connectivity works intermittently, with sessions dropping and recovering without an obvious pattern from the end-user
+            perspective. You may see bursts of retransmissions or frequent ARP/neighbor discovery traffic as hosts repeatedly try to re-establish reachability.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            Duplicate MAC addresses, virtual machine moves, or topology loops that cause the same MAC to appear on multiple switch ports.
+            In some environments, misconfigured link aggregation/bonding can also present as a MAC moving unexpectedly.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Observe packet captures or switch logs for the same source MAC address being learned on different ports within a short time window.
+            In captures, “who is talking” may look normal, but the apparent path changes rapidly.
+          </dd>
+        </dl>
+
+        <h3>Missing FCS in captures</h3>
+        <dl class="issue">
+          <dt>Symptom</dt>
+          <dd>
+            Network devices report CRC or FCS errors, while packet captures appear normal and show no corrupted frames.
+            This can be confusing when you are trying to prove a physical-layer problem from a PCAP alone.
+          </dd>
+
+          <dt>Likely cause</dt>
+          <dd>
+            The network interface card, driver, or capture method removes the Frame Check Sequence before packets reach capture software.
+            Many common capture setups cannot see the on-the-wire FCS even if errors exist.
+          </dd>
+
+          <dt>How to confirm</dt>
+          <dd>
+            Compare switch interface counters with capture results. If CRC/FCS errors increase on the switch/NIC side but are absent in Wireshark,
+            FCS stripping (or capture limitations) is the most likely explanation.
+          </dd>
+        </dl>
+
+        <h2>Security notes (if relevant)</h2>
+        <p>
+          Ethernet II provides no authentication or encryption. A host on the same L2 segment can often observe or influence traffic unless the
+          network is segmented and protected. Common risks include MAC flooding and L2 spoofing patterns such as ARP spoofing at the IPv4 boundary.
+        </p>
+        <p>
+          Mitigations typically come from network design and switch features (segmentation/VLANs, port security, 802.1X, storm control),
+          and from higher-layer security (TLS, VPNs), not from changes to Ethernet framing itself.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/dictionary.html">Back to Dictionary Index</a></li>
+          <li><a href="/fields.html">Key fields</a> <span class="hint">(Destination MAC, EtherType — Soon)</span></li>
+          <li><a href="/topics.html">Related topics</a> <span class="hint">(VLAN basics, Switch MAC learning — Soon)</span></li>
+        </ul>
+
+        <!--
+        Done checklist (keep as comment)
+        - data-ads: on
+        - 1000+ words: verify before publishing
+        - H2 >= 6: yes
+        - Table >= 1: yes
+        - Lists >= 2: yes
+        - Internal links >= 3: yes (dictionary/fields/topics)
+        - No 404 links: yes (Soon not linked)
+        - Wireshark filter uses ws-filter block: yes
+        - Issue hierarchy uses dl.issue: yes
+        -->
+      </article>
+
+      <div class="ad">Ad slot (dictionary-bottom)</div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>
