@@ -1,0 +1,5 @@
+# pages.dev → custom domain
+https://network-packet-dictionary.pages.dev/* https://packetdictionary.com/:splat 301!
+
+# http → https
+http://packetdictionary.com/* https://packetdictionary.com/:splat 301!
