@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>DNS RCODE (Response Code) | Network Packet Dictionary</title>
+  <meta name="description" content="DNS RCODE explained: what response codes mean, common values like NOERROR and NXDOMAIN, Wireshark tips, and troubleshooting patterns for DNS failures." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <style>
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div><div class="brand-title">Network Packet Dictionary</div></div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <div class="ad">Ad slot (fields-top)</div>
+
+      <article class="content">
+        <h1>DNS RCODE (Response Code)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          <strong>RCODE</strong> is the DNS <strong>response code</strong> that tells you how a DNS query was handled.
+          When a resolver or authoritative server answers a query, RCODE indicates whether the answer is valid, the name
+          does not exist, the server refused the query, or an error occurred. In practice, RCODE is one of the fastest
+          ways to distinguish “DNS is slow” from “DNS is returning a deliberate negative answer.”
+        </p>
+        <p>
+          Many user-facing problems (“website down”, “API unreachable”, “login broken”) reduce to a DNS result. RCODE helps
+          identify whether the problem is a real absence (NXDOMAIN), a policy/permission decision (REFUSED), or a server-side
+          problem (SERVFAIL).
+        </p>
+
+        <h2>Where it appears in the stack</h2>
+        <p>
+          RCODE is part of the DNS message header. You see it in the DNS layer when DNS is carried over UDP/TCP (classic DNS),
+          and in application-level views when DNS is carried over modern transports (DoT/DoH), depending on where you capture.
+        </p>
+
+        <h2>What RCODE tells you</h2>
+        <ol>
+          <li>Whether the server considered the query valid.</li>
+          <li>Whether the name exists (or not).</li>
+          <li>Whether the server could complete resolution.</li>
+          <li>Whether the server refused due to policy or configuration.</li>
+        </ol>
+        <p>
+          RCODE is not the whole story: you often need to correlate it with the query name/type, flags (RD/RA), and which server answered.
+          But as a first pass, RCODE is “the headline” of the response.
+        </p>
+
+        <h2>Common values (Value table)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>RCODE</th>
+              <th>Name</th>
+              <th>Meaning</th>
+              <th>Common notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>0</td>
+              <td>NOERROR</td>
+              <td>Query processed successfully</td>
+              <td>May still have empty answer section (e.g., NODATA)</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>SERVFAIL</td>
+              <td>Server failure while processing</td>
+              <td>Often upstream resolution failure, DNSSEC issues, or timeouts</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>NXDOMAIN</td>
+              <td>Name does not exist</td>
+              <td>Strong signal of typo, missing record, or split-horizon mismatch</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>NOTIMP</td>
+              <td>Not implemented</td>
+              <td>Server does not support requested operation/type</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>REFUSED</td>
+              <td>Server refused the query</td>
+              <td>Policy decision, ACLs, recursion disabled, or rate limiting</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>dns.flags.rcode == 3</code></pre>
+
+        <p><strong>What you typically see:</strong></p>
+        <ul>
+          <li>RCODE displayed in the DNS response header details.</li>
+          <li>NXDOMAIN responses often paired with SOA in authority section (negative caching behavior).</li>
+          <li>SERVFAIL bursts during upstream outages or misconfiguration.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> When debugging “can’t reach a site,” first check whether you are getting NXDOMAIN,
+          SERVFAIL, or no response at all. Those three outcomes point to very different root causes.
+        </p>
+
+        <h2>Common troubleshooting patterns</h2>
+        <h3>NXDOMAIN for a name that “should exist”</h3>
+        <p>
+          NXDOMAIN indicates the server believes the name does not exist. Common causes include typos, missing records, wrong DNS view
+          (split-horizon internal vs external), or querying the wrong resolver. Confirm by comparing the queried name and which server responded.
+        </p>
+
+        <h3>SERVFAIL spikes after a change</h3>
+        <p>
+          SERVFAIL usually means the resolver could not complete the lookup. This can happen due to upstream timeouts, DNSSEC validation
+          failures, or unreachable authoritative servers. In captures, correlate SERVFAIL with response timing and which resolver generated it.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/fields.html">Back to Fields Index</a></li>
+          <li><a href="/dictionary/dns.html">Dictionary: DNS overview</a></li>
+          <li><a href="/topics.html">Topics Index</a> <span class="hint">(DNS timeout analysis — Soon)</span></li>
+          <li><a href="/dictionary.html">Dictionary Index</a></li>
+        </ul>
+
+        <!--
+        Fields P0 checklist
+        - Safe-scope CSS: YES
+        - data-ads: on
+        - 400–800 words: verify
+        - Value table: YES
+        - Links back to dictionary: YES (/dictionary/dns.html)
+        - AdSense script embedded here: NO
+        -->
+      </article>
+
+      <div class="ad">Ad slot (fields-bottom)</div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>TCP Three-Way Handshake | Network Packet Dictionary</title>
+  <meta name="description" content="Understand TCP’s three-way handshake by reading SYN/SYN-ACK/ACK patterns in captures, spotting failure cases, and deciding what to check next." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <!-- Topics P0 v1.0: SAFE SCOPE (ONLY inside <article class="content">) -->
+  <style>
+    /* Wireshark filter block (scoped) */
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    /* Sub-section emphasis (scoped) */
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+
+    /* Issue-style blocks for “success/failure” (scoped) */
+    .content dl.issue{
+      margin:0.6em 0 1.4em;
+      padding:0.9em 1em;
+      border-radius:10px;
+      background:rgba(0,0,0,0.04);
+      border:1px solid rgba(0,0,0,0.08);
+    }
+    .content dl.issue dt{
+      font-weight:900;
+      margin-top:0.65em;
+    }
+    .content dl.issue dt:first-child{ margin-top:0; }
+    .content dl.issue dd{
+      margin:0.2em 0 0.45em;
+      opacity:0.95;
+      line-height:1.65;
+    }
+    .content dl.issue dd + dt{ margin-top:0.75em; }
+
+    /* Ordered list emphasis (scoped) */
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+
+  <!-- v1.0 rule: AdSense script must NOT be embedded in topics pages -->
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <div class="ad">Ad slot (topics-top)</div>
+
+      <article class="content">
+        <h1>TCP Three-Way Handshake</h1>
+
+        <h2>The scenario (Why you care)</h2>
+        <p>
+          When a “web page doesn’t load” or an API client reports <em>connection timed out</em>, the very first question is:
+          did the TCP connection get established at all? The TCP three-way handshake is the minimal exchange that turns a
+          destination <em>IP:port</em> into an actual connection state on both ends. If the handshake fails, everything above it
+          (HTTP, TLS, DNS-over-TCP, database protocols) will look broken even if the application is healthy.
+        </p>
+        <p>
+          The good news is that the handshake is easy to read in a capture once you know what to look for. A successful handshake
+          shows a clean sequence of <strong>SYN → SYN-ACK → ACK</strong>. Most real-world outages show one of a small number of
+          repeatable patterns: repeated SYNs with no answer, immediate RSTs, or a SYN-ACK that never receives the final ACK.
+          This page focuses on turning those patterns into quick, reliable decisions about what to check next.
+        </p>
+
+        <h2>What “good” looks like (Success pattern)</h2>
+        <dl class="issue">
+          <dt>What you see</dt>
+          <dd>
+            A client sends a TCP <strong>SYN</strong> to the server’s listening port. The server replies with <strong>SYN,ACK</strong>.
+            The client responds with the final <strong>ACK</strong>. After that, application data can flow (for example, TLS ClientHello
+            or HTTP request bytes).
+          </dd>
+
+          <dt>Why it happens</dt>
+          <dd>
+            TCP uses the handshake to synchronize sequence numbers and confirm that both sides can send and receive. The client’s SYN
+            proposes an initial sequence number, the server’s SYN-ACK acknowledges it and proposes its own, and the final ACK confirms
+            the server’s proposal. Only then do both stacks allocate full connection state and deliver data reliably.
+          </dd>
+
+          <dt>Key clue</dt>
+          <dd>
+            You see all three packets for the same 4-tuple (client IP/port, server IP/port) in a short time window, and the SYN-ACK’s
+            ACK number matches the client SYN’s sequence number + 1. This simple arithmetic alignment is a strong indicator that you are
+            observing a real handshake (not unrelated packets).
+          </dd>
+        </dl>
+
+        <h2>What goes wrong (Failure pattern)</h2>
+        <dl class="issue">
+          <dt>What you see</dt>
+          <dd>
+            One of the handshake steps is missing or replaced: (1) repeated SYN retransmissions with no SYN-ACK, (2) an immediate RST
+            after SYN (or instead of SYN-ACK), or (3) a SYN-ACK is sent but the final ACK never arrives and the server retransmits SYN-ACK.
+          </dd>
+
+          <dt>Likely causes</dt>
+          <dd>
+            The missing packet usually means the path (or policy) blocks it: wrong destination, routing blackhole, firewall drop,
+            server not listening, or asymmetric routing where replies take a different path. Immediate RST often indicates “nothing
+            is listening on that port” or an intermediate device actively rejecting the connection. A SYN-ACK with no final ACK can
+            point to return-path issues, stateful filtering, or NAT/load balancer behavior changing the flow midstream.
+          </dd>
+
+          <dt>Key clue</dt>
+          <dd>
+            Handshake failures are mostly about <strong>which direction is missing</strong>. If SYN leaves but SYN-ACK never returns,
+            the problem is “server-side reachability or return path.” If SYN-ACK returns but ACK never reaches the server, the problem
+            is “client-side return path, filtering, or translation.” Capturing on both sides of a boundary (client vs gateway, or
+            server vs load balancer) often turns this into a yes/no decision quickly.
+          </dd>
+        </dl>
+
+        <h2>Signals &amp; decision table</h2>
+        <p>
+          Use the table below as a fast decision map. The handshake is small, so you do not need dozens of signals. The goal is to
+          classify what you see into one of a few branches, then pick the next observation point (or related field) that confirms the hypothesis.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Signal you see</th>
+              <th>What it suggests</th>
+              <th>What to check next</th>
+              <th>Related field/protocol</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Client sends SYN, no SYN-ACK ever returns</td>
+              <td>Drop/blackhole on path to server, server down, or server-side filtering</td>
+              <td>Is the server IP reachable and routed? Capture near server/gateway; confirm ARP/route on local segment</td>
+              <td>IPv4 routing, ARP, TCP SYN</td>
+            </tr>
+            <tr>
+              <td>Immediate RST from server side after SYN</td>
+              <td>Port closed or active reject by firewall/proxy</td>
+              <td>Confirm destination port/service; compare to expected listener; check whether RST is truly from the server</td>
+              <td>TCP flags (RST), TCP port</td>
+            </tr>
+            <tr>
+              <td>SYN-ACK arrives at client, but server never sees final ACK</td>
+              <td>Return-path issue from client to server, stateful filtering, NAT mismatch</td>
+              <td>Capture on server-side interface; compare 4-tuple across NAT; confirm whether ACK is rewritten/dropped</td>
+              <td>NAT, TCP ACK behavior</td>
+            </tr>
+            <tr>
+              <td>Handshake completes, but data stalls immediately</td>
+              <td>Handshake is fine; problem is above TCP (TLS/HTTP) or TCP window/PMTU later</td>
+              <td>Look at first application bytes (TLS ClientHello / HTTP request), then check retransmissions and window updates</td>
+              <td>TLS, HTTP, TCP window</td>
+            </tr>
+            <tr>
+              <td>Many SYNs to many destinations, no responses</td>
+              <td>Local connectivity issue, wrong gateway, or upstream outage</td>
+              <td>Check ARP for default gateway, local link errors, routing table correctness at the client side</td>
+              <td>ARP, IPv4 gateway</td>
+            </tr>
+            <tr>
+              <td>Handshake succeeds only to some servers, fails to others</td>
+              <td>Policy/ACL differences, DNS mapping to different VIPs, or asymmetric paths</td>
+              <td>Compare failing vs working destinations; confirm server IP/port, path, and whether a load balancer is involved</td>
+              <td>DNS, routing, load balancer</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>tcp.flags.syn == 1 or tcp.flags.reset == 1</code></pre>
+        <ul>
+          <li>
+            Successful handshakes show a SYN, then SYN-ACK, then ACK with matching sequence/acknowledgment progression.
+          </li>
+          <li>
+            Failures often show repeated SYN retransmissions (same destination) or repeated SYN-ACK retransmissions (server side).
+          </li>
+          <li>
+            RST packets are easy to spot and often immediately explain “connection refused” style errors.
+          </li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> Follow one 4-tuple and ask “which direction is missing?” before thinking about the application.
+        </p>
+
+        <h2>Fast triage checklist</h2>
+        <ol>
+          <li><strong>Pick one attempt</strong>: select a single client port and server port pair (one connection try), not the whole capture.</li>
+          <li><strong>Find the SYN</strong>: confirm the client is actually sending SYNs to the intended destination IP and port.</li>
+          <li><strong>Check for SYN-ACK</strong>: if none return, classify it as “no response” and move your capture point closer to the server path.</li>
+          <li><strong>If SYN-ACK exists, look for the final ACK</strong>: missing ACK strongly suggests return-path, stateful filtering, or NAT mismatch.</li>
+          <li><strong>If handshake completes, stop blaming TCP</strong>: switch to the next layer (TLS/HTTP) or to later TCP behavior (window/PMTU) as needed.</li>
+        </ol>
+
+        <h2>Common pitfalls</h2>
+        <h3>Mistaking “SYN seen” for “server received it”</h3>
+        <p>
+          Seeing a SYN on the client capture only proves the client transmitted it. It does not prove the server received it, or that
+          the server could respond back. That’s why handshake debugging often requires <em>two vantage points</em>: one near the client
+          and one near the server or gateway. The decisive evidence is where the packet disappears: if it is visible at the client but
+          not at the next hop, it’s a local/link problem; if it is visible near the server but no SYN-ACK leaves, it’s a server-side
+          listener/policy problem.
+        </p>
+
+        <h3>Assuming RST always means “the server is down”</h3>
+        <p>
+          RST usually means “actively rejected,” which can be a server with no listener, but it can also be a firewall, proxy, or load
+          balancer generating resets. Correlate the source IP/MAC (if local), TTL patterns, and capture location. If the “RST source”
+          changes when you move the capture point, it’s likely not the end host.
+        </p>
+
+        <h3>Overlooking middleboxes that terminate TCP</h3>
+        <p>
+          In many environments the TCP handshake you see is with a VIP (load balancer) rather than the real backend server. That is not
+          wrong, but it changes what “success” means: the handshake can succeed even when the backend is unhealthy. In those cases, a
+          successful handshake plus an immediate application failure may indicate the middlebox accepted the connection but could not
+          complete upstream routing or health checks. Use the decision table to pivot to the right next check.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/topics.html">Back to Topics Index</a></li>
+          <li><a href="/dictionary/tcp.html">Dictionary: TCP overview</a></li>
+          <li><a href="/fields/tcp-flags-syn.html">Field: TCP SYN flag</a></li>
+          <li><a href="/dictionary.html">Dictionary Index</a></li>
+        </ul>
+
+        <!--
+        Topics P0 v1.0 checklist
+        - Safe-scope CSS: YES (all selectors under .content)
+        - data-ads: on
+        - 700–1200 words: verify before publishing
+        - Table >= 1: YES (decision table)
+        - Lists: YES (ul + ol)
+        - Internal links >= 4: topics + dictionary + field + dictionary index
+        - Soon is not linked: yes (text only)
+        - Wireshark filter uses <pre class="ws-filter"><code>...</code></pre>: yes
+        - AdSense script embedded here: NO
+        -->
+      </article>
+
+      <div class="ad">Ad slot (topics-bottom)</div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

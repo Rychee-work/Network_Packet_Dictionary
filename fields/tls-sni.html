@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>TLS SNI (Server Name Indication) | Network Packet Dictionary</title>
+  <meta name="description" content="TLS SNI explained: what it is, why it matters for HTTPS hosting, Wireshark tips, common values, and troubleshooting patterns like wrong certificate or blocked domains." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <style>
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div><div class="brand-title">Network Packet Dictionary</div></div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <div class="ad">Ad slot (fields-top)</div>
+
+      <article class="content">
+        <h1>TLS SNI (Server Name Indication)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          <strong>SNI (Server Name Indication)</strong> is a TLS extension sent by the client during the handshake to indicate
+          the <strong>hostname</strong> it wants to connect to (for example, <em>api.example.com</em>). This matters because many
+          servers host multiple domains on the same IP address. Without SNI, the server would not know which certificate and configuration
+          to present before encryption is established.
+        </p>
+        <p>
+          In practical troubleshooting, SNI is often the only “application hint” available for HTTPS traffic when you cannot decrypt.
+          It helps answer: “Which hostname was the client attempting to reach?” That is valuable when IPs are shared across many services
+          (CDNs, reverse proxies, multi-tenant platforms).
+        </p>
+
+        <h2>Where it appears in the stack</h2>
+        <p>
+          SNI appears inside the TLS handshake (typically ClientHello). In classic HTTPS, TLS runs over TCP/443. For other protocols,
+          similar concepts can exist, but SNI is specifically a TLS extension. Depending on capture location and TLS features, SNI may
+          be visible to the network even when application data is encrypted.
+        </p>
+
+        <h2>How SNI affects server selection</h2>
+        <ol>
+          <li>Client opens a TCP connection to an IP (often shared by many hostnames).</li>
+          <li>Client sends ClientHello including SNI = desired hostname.</li>
+          <li>Server selects the appropriate certificate and policy for that hostname.</li>
+          <li>Handshake completes; application data flows encrypted.</li>
+        </ol>
+        <p>
+          If SNI is missing or incorrect, the server might return a default certificate, route to a default virtual host,
+          or terminate the handshake depending on configuration.
+        </p>
+
+        <h2>Common values and outcomes (Value table)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>SNI value / state</th>
+              <th>Meaning</th>
+              <th>Common outcome</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Valid hostname</td>
+              <td>Client requests a specific site</td>
+              <td>Correct certificate and routing</td>
+              <td>Most normal HTTPS traffic</td>
+            </tr>
+            <tr>
+              <td>Missing SNI</td>
+              <td>No hostname provided</td>
+              <td>Default certificate / wrong site / failure</td>
+              <td>Legacy clients or special tooling; less common today</td>
+            </tr>
+            <tr>
+              <td>Wrong hostname</td>
+              <td>Mismatch vs intended site</td>
+              <td>Certificate mismatch or policy block</td>
+              <td>Can happen with proxies or misconfigured clients</td>
+            </tr>
+            <tr>
+              <td>Blocked hostname</td>
+              <td>Policy uses SNI for filtering</td>
+              <td>Handshake fails or resets</td>
+              <td>Some networks apply domain-based controls at TLS layer</td>
+            </tr>
+            <tr>
+              <td>Encrypted/hidden indication</td>
+              <td>Hostname not visible to observer</td>
+              <td>Harder network-side debugging</td>
+              <td>Visibility depends on TLS features and capture point</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>tls.handshake.extensions_server_name</code></pre>
+
+        <p><strong>What you typically see:</strong></p>
+        <ul>
+          <li>ClientHello details including SNI hostname.</li>
+          <li>Certificate subject/SAN that should match the requested hostname.</li>
+          <li>Handshake alerts when policy or compatibility fails.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> When users report “wrong certificate” or “site blocked,” check SNI first. If the SNI is wrong
+          or missing, everything above it will look broken even if TCP is fine.
+        </p>
+
+        <h2>Common troubleshooting patterns</h2>
+        <h3>Certificate mismatch on shared IP</h3>
+        <p>
+          If the server presents the wrong certificate, the most common cause in shared hosting is that the server did not select
+          the intended virtual host. Confirm that the client’s SNI matches the expected hostname and that the certificate SAN covers it.
+        </p>
+
+        <h3>TLS handshake fails only on certain networks</h3>
+        <p>
+          Some environments apply policy controls based on hostname. If a domain is blocked, you may see resets or TLS alerts shortly
+          after ClientHello. Comparing captures on “working network” vs “failing network” and comparing SNI is often decisive.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/fields.html">Back to Fields Index</a></li>
+          <li><a href="/dictionary/tls.html">Dictionary: TLS overview</a></li>
+          <li><a href="/dictionary/http1-1.html">Dictionary: HTTP/1.1 overview</a> <span class="hint">(HTTPS runs HTTP over TLS)</span></li>
+          <li><a href="/topics.html">Topics Index</a> <span class="hint">(Reading a TLS handshake — Soon)</span></li>
+        </ul>
+
+        <!--
+        Fields P0 checklist
+        - Safe-scope CSS: YES
+        - data-ads: on
+        - 400–800 words: verify
+        - Value table: YES
+        - Links back to dictionary: YES (/dictionary/tls.html)
+        - AdSense script embedded here: NO
+        -->
+      </article>
+
+      <div class="ad">Ad slot (fields-bottom)</div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

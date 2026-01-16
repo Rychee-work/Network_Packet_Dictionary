@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>TCP SYN Flag | Network Packet Dictionary</title>
+  <meta name="description" content="TCP SYN flag explained: purpose in connection setup, typical patterns, Wireshark tips, and troubleshooting signals for handshake failures." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <style>
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div><div class="brand-title">Network Packet Dictionary</div></div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <div class="ad">Ad slot (fields-top)</div>
+
+      <article class="content">
+        <h1>TCP SYN Flag</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          The <strong>SYN</strong> flag is a TCP header control bit used to <strong>start a TCP connection</strong>.
+          In the classic three-way handshake, the client sends a segment with SYN set to request a new connection, and the
+          server responds with SYN+ACK to accept and synchronize sequence numbers. Because TCP is connection-oriented,
+          SYN is one of the most important fields for interpreting “can’t connect” problems in packet captures.
+        </p>
+        <p>
+          Operationally, SYN also represents a resource decision. Servers and middleboxes may allocate state when they see
+          SYN, which is why SYN floods can be a DoS vector and why many defenses focus on SYN handling.
+        </p>
+
+        <h2>Where it appears in the stack</h2>
+        <p>
+          SYN is a <strong>TCP (Layer 4) field</strong>. You will see it on any TCP connection establishment, including HTTPS,
+          SSH, SMTP, database connections, and internal service calls. Even if application payloads are encrypted (TLS),
+          the SYN handshake is still visible because it happens before encryption.
+        </p>
+
+        <h2>Handshake behavior at a glance</h2>
+        <ol>
+          <li><strong>Client → Server:</strong> SYN (initial request to open a connection).</li>
+          <li><strong>Server → Client:</strong> SYN,ACK (server accepts and acknowledges client’s sequence).</li>
+          <li><strong>Client → Server:</strong> ACK (connection established; data can flow).</li>
+        </ol>
+        <p>
+          If this sequence breaks, the symptom is usually “connection timeout” or “connection refused/reset,” and SYN packets
+          are the fastest way to see where the failure occurs: before the server, at the server, or on the return path.
+        </p>
+
+        <h2>Common values and patterns (Value table)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Flags pattern</th>
+              <th>Meaning</th>
+              <th>Where you see it</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>SYN</td>
+              <td>Connection request</td>
+              <td>Client initiating a new TCP connection</td>
+              <td>Often includes options (MSS, SACK, Window Scale)</td>
+            </tr>
+            <tr>
+              <td>SYN, ACK</td>
+              <td>Connection accepted</td>
+              <td>Server response</td>
+              <td>If absent, suspect filtering/routing/service not reachable</td>
+            </tr>
+            <tr>
+              <td>SYN repeated</td>
+              <td>Retries due to no response</td>
+              <td>Client side during failure</td>
+              <td>Indicates timeout or dropped return traffic</td>
+            </tr>
+            <tr>
+              <td>RST after SYN</td>
+              <td>Immediate refusal/reset</td>
+              <td>Server or middlebox</td>
+              <td>Can mean “port closed” or policy-based reset</td>
+            </tr>
+            <tr>
+              <td>SYN, ACK retransmitted</td>
+              <td>Server replied but client didn’t ACK</td>
+              <td>Server side during asymmetric loss</td>
+              <td>Return path/client filtering/NAT issues are common</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>tcp.flags.syn == 1 && tcp.flags.ack == 0</code></pre>
+
+        <p><strong>What you typically see:</strong></p>
+        <ul>
+          <li>Initial SYN packets with TCP options that strongly influence performance (MSS, SACK, Window Scale).</li>
+          <li>Whether SYN-ACK returns at all (basic reachability/policy signal).</li>
+          <li>Handshake timing gaps that reveal drops, delays, or rate limiting.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> When a connection fails, first answer one question: “Do I see SYN-ACK coming back?”
+          That single observation narrows the problem space dramatically.
+        </p>
+
+        <h2>Common troubleshooting patterns</h2>
+        <h3>SYN leaves, but SYN-ACK never returns</h3>
+        <p>
+          This usually indicates a drop on the forward path (client→server), a drop on the return path (server→client),
+          or that the server is not reachable/listening. In captures, repeated SYNs without SYN-ACK is the signature.
+          Confirm by capturing closer to the server or at the gateway to localize where packets disappear.
+        </p>
+
+        <h3>SYN-ACK returns, but the connection still fails</h3>
+        <p>
+          If the server sends SYN-ACK but the final ACK never arrives, the problem is often client-side filtering, NAT state,
+          or asymmetric routing. Look for SYN-ACK retransmissions from the server and consider stateful devices between endpoints.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/fields.html">Back to Fields Index</a></li>
+          <li><a href="/dictionary/tcp.html">Dictionary: TCP overview</a></li>
+          <li><a href="/topics.html">Topics Index</a> <span class="hint">(TCP three-way handshake — Soon)</span></li>
+          <li><a href="/dictionary.html">Dictionary Index</a></li>
+        </ul>
+
+        <!--
+        Fields P0 checklist
+        - Safe-scope CSS: YES
+        - data-ads: on
+        - 400–800 words: verify
+        - Value table: YES
+        - Links back to dictionary: YES (/dictionary/tcp.html)
+        - AdSense script embedded here: NO
+        -->
+      </article>
+
+      <div class="ad">Ad slot (fields-bottom)</div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

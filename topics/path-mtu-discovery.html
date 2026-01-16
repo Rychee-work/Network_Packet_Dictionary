@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>Path MTU Discovery (PMTUD) | Network Packet Dictionary</title>
+  <meta name="description" content="Path MTU Discovery (PMTUD) troubleshooting: how to spot MTU issues in packet captures, separate them from generic packet loss, and locate where packets are dropped." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <!-- Topics P0 v1.0: SAFE SCOPE (ONLY inside <article class="content">) -->
+  <style>
+    /* Wireshark filter block (scoped) */
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    /* Sub-section emphasis (scoped) */
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+
+    /* Issue-style blocks for “success/failure” (scoped) */
+    .content dl.issue{
+      margin:0.6em 0 1.4em;
+      padding:0.9em 1em;
+      border-radius:10px;
+      background:rgba(0,0,0,0.04);
+      border:1px solid rgba(0,0,0,0.08);
+    }
+    .content dl.issue dt{
+      font-weight:900;
+      margin-top:0.65em;
+    }
+    .content dl.issue dt:first-child{ margin-top:0; }
+    .content dl.issue dd{
+      margin:0.2em 0 0.45em;
+      opacity:0.95;
+      line-height:1.65;
+    }
+    .content dl.issue dd + dt{ margin-top:0.75em; }
+
+    /* Ordered list emphasis (scoped) */
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+
+  <!-- v1.0 rule: AdSense script must NOT be embedded in topics pages -->
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <div class="ad">Ad slot (topics-top)</div>
+
+      <article class="content">
+        <h1>Path MTU Discovery (PMTUD)</h1>
+
+        <h2>The scenario (Why you care)</h2>
+        <p>
+          Path MTU Discovery problems show up as a very specific kind of “it sometimes works, sometimes hangs.”
+          Small things succeed: short pings, simple logins, tiny API calls. But as soon as a user tries to load a large web page,
+          start a VPN, or transfer a bigger file, the session stalls halfway with no obvious error.
+        </p>
+        <p>
+          From the application side this feels like random slowness or timeouts. From the network side, what is really happening
+          is that packets large enough to exceed a smaller MTU somewhere on the path are being dropped, while smaller packets
+          still pass. PMTUD is the mechanism meant to avoid this, and when it fails you get a pattern that is easy to mislabel as
+          “flaky internet” or “the server is slow” unless you know what to look for in captures.
+        </p>
+        <p>
+          This topic focuses on the IPv4 case with DF (Don’t Fragment) traffic and ICMP “fragmentation needed” messages,
+          but the same ideas help you reason about tunnels, VPNs, and firewalls that interfere with path MTU discovery.
+        </p>
+
+        <h2>What “good” looks like (Success pattern)</h2>
+        <dl class="issue">
+          <dt>What you see</dt>
+          <dd>
+            Large flows start slowly but then run smoothly. In captures you may see one or two ICMP “fragmentation needed”
+            messages early on, followed by a reduction in packet size from the sender. After that, no more ICMP errors and
+            the transfer completes without unusual retransmissions.
+          </dd>
+
+          <dt>Why it happens</dt>
+          <dd>
+            The sender initially sends packets sized for its local interface MTU (for example 1500 bytes). A smaller MTU exists
+            somewhere downstream (for example 1400 bytes over a tunnel). A router on that path sends an ICMP message describing
+            the smaller MTU. The sender lowers its path MTU estimate and continues with smaller segments, avoiding further drops.
+          </dd>
+
+          <dt>Key clue</dt>
+          <dd>
+            You see a small burst of ICMP “fragmentation needed” paired with a step change in TCP segment sizes, and
+            <em>after that point</em> retransmissions drop and throughput becomes stable.
+          </dd>
+        </dl>
+
+        <h2>What goes wrong (Failure pattern)</h2>
+        <dl class="issue">
+          <dt>What you see</dt>
+          <dd>
+            Connections that move only small amounts of data succeed, but larger transfers stall or time out. In packets,
+            you see repeated TCP retransmissions for larger segments, no corresponding ACKs, and often no ICMP “fragmentation needed”
+            messages at all. From the sender’s perspective, the path looks like random loss.
+          </dd>
+
+          <dt>Likely causes</dt>
+          <dd>
+            Common causes include: firewalls blocking ICMP “fragmentation needed”, middleboxes that drop oversized DF packets
+            without sending errors, tunnel MTUs that are smaller than the endpoints assume, or asymmetric paths where ICMP is
+            generated but never makes it back to the original sender.
+          </dd>
+
+          <dt>Key clue</dt>
+          <dd>
+            The pattern “small pings OK, large pings fail” or “TLS handshake completes but large HTTP responses stall” combined
+            with repeated retransmissions for the same large sequence numbers is a strong PMTUD failure signature.
+          </dd>
+        </dl>
+
+        <h2>Signals &amp; decision table</h2>
+        <p>
+          Use this table when you’re not sure whether you are looking at a generic loss problem or a specific path MTU issue.
+          Check which signal best matches your capture and follow the suggested next step.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Signal you see</th>
+              <th>What it suggests</th>
+              <th>What to check next</th>
+              <th>Related field/protocol</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Small pings succeed, large pings time out</td>
+              <td>Likely path MTU problem on the route</td>
+              <td>Compare ping sizes with observed TCP segment sizes; look for ICMP “fragmentation needed”</td>
+              <td>IPv4 DF bit, ICMP Type 3 Code 4</td>
+            </tr>
+            <tr>
+              <td>ICMP “fragmentation needed” present, then segment size shrinks</td>
+              <td>PMTUD working as designed</td>
+              <td>Verify the new segment size fits the reported MTU; confirm transfer completes without further errors</td>
+              <td>IPv4 header, ICMP error payload</td>
+            </tr>
+            <tr>
+              <td>Repeated TCP retransmits of large segments, no ICMP errors</td>
+              <td>PMTUD blocked or broken (ICMP filtered)</td>
+              <td>Capture closer to the suspected bottleneck; test with DF cleared or smaller MSS</td>
+              <td>TCP MSS option, IPv4 Flags/Fragment Offset</td>
+            </tr>
+            <tr>
+              <td>VPN or tunnel traffic stalls, plain traffic works</td>
+              <td>Encapsulation overhead reduced effective MTU</td>
+              <td>Compare MTU on tunnel vs underlay; inspect outer/inner packet sizes in captures</td>
+              <td>Encapsulating protocol + inner IPv4</td>
+            </tr>
+            <tr>
+              <td>One direction fine, reverse direction stalls for large data</td>
+              <td>Asymmetric path MTU or ICMP filtering</td>
+              <td>Capture in both directions; check which side never sees ICMP or ACKs for large packets</td>
+              <td>IPv4 routing, ICMP return path</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>icmp.type == 3 &amp;&amp; icmp.code == 4</code></pre>
+        <ul>
+          <li>
+            When PMTUD is working, you see one or more ICMP “fragmentation needed” messages referencing the original IP header
+            and the next-hop MTU, followed by smaller TCP segments from the sender.
+          </li>
+          <li>
+            When PMTUD is broken, you typically see large TCP segments being retransmitted without any matching ICMP errors,
+            and the receiver never acknowledges those bytes.
+          </li>
+          <li>
+            On tunneled or VPN links, you may see the outer packet being too large for a hop even when the inner IP packet
+            looks reasonable; the ICMP error will reference the outer header.
+          </li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> Line up the sequence numbers of the retransmitted TCP segments with any ICMP
+          “fragmentation needed” messages. If you never see ICMP and only the large segments suffer, you are almost certainly
+          looking at a PMTUD or MTU configuration issue, not generic congestion loss.
+        </p>
+
+        <h2>Fast triage checklist</h2>
+        <ol>
+          <li>
+            Reproduce the problem with a simple test (for example: increasing-size ping or a controlled file transfer) so you can
+            capture a clean example.
+          </li>
+          <li>
+            In the capture, identify the first point where traffic stalls and note the size of the packets involved
+            (IP total length and TCP segment size).
+          </li>
+          <li>
+            Apply an ICMP filter and look for Type 3 Code 4 messages around that time. If present, note the reported MTU and
+            whether the sender adapts.
+          </li>
+          <li>
+            If no ICMP appears, capture closer to intermediate hops or firewalls, or temporarily clear DF / lower MSS to see if
+            a smaller packet size restores connectivity.
+          </li>
+          <li>
+            Once you’ve confirmed an MTU-related root cause, decide whether the permanent fix belongs in routing (path choice),
+            device configuration (MTU settings, tunnel parameters), or security policy (allowing critical ICMP types).
+          </li>
+        </ol>
+
+        <h2>Common pitfalls</h2>
+        <h3>Assuming “packet loss” always means congestion</h3>
+        <p>
+          It is tempting to treat any retransmission-heavy trace as a bandwidth or congestion problem. In PMTUD failures, the loss is
+          very size-specific: only packets above a certain size disappear. If you don’t check packet sizes, you can waste time tuning
+          TCP, QoS, or server settings when the real fix is to adjust MTU or allow ICMP.
+        </p>
+
+        <h3>Misreading ICMP as “noise” or “attack”</h3>
+        <p>
+          Some environments aggressively drop ICMP because it “looks scary.” For PMTUD, ICMP is part of the control plane that keeps
+          large traffic working. Blocking all ICMP may remove useful attack vectors, but it also removes the mechanism that tells
+          senders to slow down their packet size. The right approach is usually to allow well-defined ICMP types and codes rather
+          than blocking the protocol entirely.
+        </p>
+
+        <h3>Forgetting about tunnels and overlays</h3>
+        <p>
+          When MTU seems “correct everywhere” but PMTUD symptoms persist, an overlay is often hiding in the middle: GRE, IPsec,
+          VXLAN, or a provider-managed tunnel. Each adds headers and reduces the effective MTU. If you only look at endpoint MTUs,
+          you can miss the real bottleneck where the encapsulated packets are actually dropped.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/topics.html">Back to Topics Index</a></li>
+          <li><a href="/dictionary/ipv4.html">Dictionary: IPv4 overview</a></li>
+          <li><a href="/dictionary/icmp.html">Dictionary: ICMP overview</a></li>
+          <li><a href="/fields/ipv4-ttl.html">Field: IPv4 TTL and fragmentation hints</a></li>
+          <li><a href="/dictionary.html">Dictionary Index</a></li>
+        </ul>
+
+        <!--
+        Topics P0 v1.0 checklist
+        - Safe-scope CSS: YES (all selectors under .content)
+        - data-ads: on
+        - 700–1200 words: verify before publishing
+        - Table >= 1: YES (decision table)
+        - Lists: YES (ul + ol)
+        - Internal links >= 4: topics + dictionary + field + dictionary index
+        - Soon is not linked: yes (text only)
+        - Wireshark filter uses <pre class="ws-filter"><code>...</code></pre>: yes
+        - AdSense script embedded here: NO
+        -->
+      </article>
+
+      <div class="ad">Ad slot (topics-bottom)</div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

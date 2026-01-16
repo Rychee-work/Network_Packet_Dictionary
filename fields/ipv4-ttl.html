@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>IPv4 DF Flag (Don't Fragment) | Network Packet Dictionary</title>
+  <meta name="description" content="IPv4 DF (Don't Fragment) flag explained: purpose, typical values, PMTU behavior, Wireshark tips, and common troubleshooting patterns." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <style>
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div><div class="brand-title">Network Packet Dictionary</div></div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <div class="ad">Ad slot (fields-top)</div>
+
+      <article class="content">
+        <h1>IPv4 DF Flag (Don't Fragment)</h1>
+
+        <h2>What it is (Definition)</h2>
+        <p>
+          The <strong>DF (Don't Fragment)</strong> flag is part of the IPv4 fragmentation control fields. When DF is set,
+          it tells routers: <strong>do not fragment this packet</strong>. If a router needs to send the packet out of an
+          interface with a smaller MTU and the packet is too large, the router must drop the packet and (typically) send
+          an ICMP error back to the sender indicating that fragmentation would be required.
+        </p>
+        <p>
+          DF is central to modern networking because it enables <strong>Path MTU Discovery (PMTUD)</strong>. Endpoints can
+          send DF-marked packets and adjust their packet size based on ICMP feedback, rather than relying on routers to
+          fragment packets in the middle of the network.
+        </p>
+
+        <h2>Where it appears in the stack</h2>
+        <p>
+          DF is an <strong>IPv4 (Layer 3) field</strong>. It matters most when the packet size approaches the effective MTU
+          on some link along the path (including tunnels, VPNs, and encapsulation). It is often invisible in “small packet”
+          traffic but becomes critical for larger transfers and certain protocols.
+        </p>
+
+        <h2>How DF affects behavior</h2>
+        <ol>
+          <li>Sender transmits a packet with DF set.</li>
+          <li>If all links can carry it, the packet forwards normally.</li>
+          <li>If a link cannot carry it, the router cannot fragment it and drops it.</li>
+          <li>Router may send ICMP “Fragmentation needed” (or similar) back to the sender.</li>
+          <li>Sender reduces packet size (or adjusts MSS) and retries with a smaller size.</li>
+        </ol>
+        <p>
+          The most common operational failure is when ICMP feedback is filtered: the sender never learns the proper MTU, so
+          larger packets fail silently while smaller ones work.
+        </p>
+
+        <h2>Common values (Value table)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>DF value</th>
+              <th>Meaning</th>
+              <th>Typical scenarios</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>DF = 1</td>
+              <td>Do not fragment</td>
+              <td>PMTUD-enabled traffic, many TCP flows</td>
+              <td>Packet too large → drop + ICMP needed (if allowed)</td>
+            </tr>
+            <tr>
+              <td>DF = 0</td>
+              <td>Fragmentation allowed</td>
+              <td>Legacy behaviors, some special traffic</td>
+              <td>Routers may fragment (fragmentation has downsides)</td>
+            </tr>
+            <tr>
+              <td>DF = 1 + no ICMP</td>
+              <td>Blackhole risk</td>
+              <td>VPN/tunnels, strict firewalls</td>
+              <td>Large packets fail; symptom looks like “random stalls”</td>
+            </tr>
+            <tr>
+              <td>DF toggles by size</td>
+              <td>Mixed behavior</td>
+              <td>Apps with variable payload sizes</td>
+              <td>Small requests succeed, large responses fail</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>ip.flags.df == 1</code></pre>
+
+        <p><strong>What you typically see:</strong></p>
+        <ul>
+          <li>IPv4 header flags showing DF set (and fragment offset typically 0 for non-fragments).</li>
+          <li>ICMP “fragmentation needed” style messages when a path MTU mismatch exists.</li>
+          <li>Tunnel-related traffic where outer headers have different MTU constraints than inner flows.</li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> If small transactions work but large ones stall, check whether DF is set and whether
+          ICMP feedback is visible. Absence of ICMP does not prove “no problem” — it can be part of the problem.
+        </p>
+
+        <h2>Common troubleshooting patterns</h2>
+        <h3>“Small works, large fails” across a VPN or tunnel</h3>
+        <p>
+          Encapsulation reduces effective MTU. If endpoints send packets sized for a normal Ethernet MTU and DF is set,
+          a smaller tunnel MTU can cause drops. If ICMP is filtered, the failure often appears as retries/timeouts in TCP,
+          while UDP-based apps may just look “unreliable.”
+        </p>
+
+        <h3>Fragmentation exists, but performance is poor</h3>
+        <p>
+          Allowing fragmentation can mask MTU problems but introduce reassembly overhead and higher loss sensitivity
+          (losing one fragment loses the whole packet). Modern practice usually prefers PMTUD with DF, plus correct MSS/MTU tuning.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/fields.html">Back to Fields Index</a></li>
+          <li><a href="/dictionary/ipv4.html">Dictionary: IPv4 overview</a></li>
+          <li><a href="/topics.html">Topics Index</a> <span class="hint">(Path MTU discovery — Soon)</span></li>
+          <li><a href="/dictionary.html">Dictionary Index</a></li>
+        </ul>
+
+        <!--
+        Fields P0 checklist
+        - Safe-scope CSS: YES
+        - data-ads: on
+        - 400–800 words: verify
+        - Value table: YES
+        - Links back to dictionary: YES
+        - AdSense script embedded here: NO
+        -->
+      </article>
+
+      <div class="ad">Ad slot (fields-bottom)</div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>

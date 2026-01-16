@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <title>TCP Zero Window | Network Packet Dictionary</title>
+  <meta name="description" content="Learn how to spot TCP Zero Window and Window Full patterns in captures, distinguish normal backpressure from failure, and decide what to check next." />
+  <meta name="robots" content="index,follow" />
+
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <!-- Topics P0 v1.0: SAFE SCOPE (ONLY inside <article class="content">) -->
+  <style>
+    /* Wireshark filter block (scoped) */
+    .content pre.ws-filter{
+      margin:0.4em 0 1em;
+      padding:0.6em 0.8em;
+      border-radius:8px;
+      background:rgba(0,0,0,0.06);
+      border:1px solid rgba(0,0,0,0.10);
+      overflow-x:auto;
+    }
+    .content pre.ws-filter code{
+      background:none;
+      padding:0;
+      border:none;
+      font-size:0.95em;
+      user-select:text;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    /* Sub-section emphasis (scoped) */
+    .content h3{
+      font-size:1.2em;
+      font-weight:900;
+      margin-top:1.6em;
+      margin-bottom:0.45em;
+    }
+
+    /* Issue-style blocks for “success/failure” (scoped) */
+    .content dl.issue{
+      margin:0.6em 0 1.4em;
+      padding:0.9em 1em;
+      border-radius:10px;
+      background:rgba(0,0,0,0.04);
+      border:1px solid rgba(0,0,0,0.08);
+    }
+    .content dl.issue dt{
+      font-weight:900;
+      margin-top:0.65em;
+    }
+    .content dl.issue dt:first-child{ margin-top:0; }
+    .content dl.issue dd{
+      margin:0.2em 0 0.45em;
+      opacity:0.95;
+      line-height:1.65;
+    }
+    .content dl.issue dd + dt{ margin-top:0.75em; }
+
+    /* Ordered list emphasis (scoped) */
+    .content ol{ margin:0.6em 0 1.2em; padding-left:1.4em; }
+    .content ol li{ margin:0.4em 0; line-height:1.6; }
+    .content ol li::marker{ font-weight:900; }
+  </style>
+
+  <!-- v1.0 rule: AdSense script must NOT be embedded in topics pages -->
+</head>
+
+<body data-ads="on">
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-title">Network Packet Dictionary</div>
+        </div>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="/dictionary.html">Dictionary</a>
+        <a href="/fields.html">Fields</a>
+        <a href="/topics.html">Topics</a>
+        <a href="/tools.html">Tools</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+
+      <div class="ad">Ad slot (topics-top)</div>
+
+      <article class="content">
+        <h1>TCP Zero Window</h1>
+
+        <h2>The scenario (Why you care)</h2>
+        <p>
+          You’re troubleshooting a “slow” application: file transfers stall, an API call hangs, a database client stops receiving results,
+          or a remote desktop session freezes for seconds at a time. The network link looks up, routing is fine, and there are no obvious drops,
+          yet throughput collapses. In captures, you may see repeated acknowledgments and very little payload movement. This is where
+          <strong>TCP flow control</strong> often explains the behavior.
+        </p>
+        <p>
+          A <strong>TCP Zero Window</strong> event means the receiver is telling the sender: “I cannot accept more data right now.”
+          This is not inherently a network failure. It is backpressure from the receiving host, usually caused by the receiver’s application
+          not reading fast enough or the host being resource constrained. However, zero window patterns can also appear during real faults:
+          a stuck application, a saturated endpoint, or a middlebox terminating and re-originating connections. The goal of this page is to
+          help you decide: is this normal backpressure, or a failure mode you need to escalate?
+        </p>
+
+        <h2>What “good” looks like (Success pattern)</h2>
+        <dl class="issue">
+          <dt>What you see</dt>
+          <dd>
+            The receiver’s advertised window shrinks under load, possibly reaching a very small value, and then recovers.
+            You might see short bursts where the sender pauses, followed by continued data transfer. When a true zero window occurs,
+            it is brief, and the receiver later sends a <em>Window Update</em> indicating space is available again.
+          </dd>
+
+          <dt>Why it happens</dt>
+          <dd>
+            TCP’s receive window reflects how much buffer space the receiver is willing to accept beyond the current ACKed sequence.
+            If the receiving application cannot drain its socket buffer quickly (CPU spike, disk slowness, GC pause, busy event loop),
+            the stack advertises a smaller window to prevent buffer overrun. Once the application catches up, the window grows and the flow resumes.
+          </dd>
+
+          <dt>Key clue</dt>
+          <dd>
+            Progress resumes after a Window Update: you see payload continue and the advertised window increases.
+            The “pause” is bounded, and you do not see endless probing without recovery.
+          </dd>
+        </dl>
+
+        <h2>What goes wrong (Failure pattern)</h2>
+        <dl class="issue">
+          <dt>What you see</dt>
+          <dd>
+            The receiver advertises <strong>window size = 0</strong> for an extended period, and the sender stops sending payload.
+            The sender may transmit small <em>Zero Window Probes</em> periodically to check whether the receiver has opened the window.
+            If the window never opens, the flow looks “alive” (ACKs and probes exist) but makes no application progress.
+          </dd>
+
+          <dt>Likely causes</dt>
+          <dd>
+            The receiver is genuinely stuck or overwhelmed: the application stopped reading, a process is hung, the host is under memory pressure,
+            or I/O is stalled. Another possibility is that you are not observing the true endpoint: a proxy or load balancer may be the “receiver”
+            in your capture and is backpressuring because its upstream path is unhealthy. In either case, the symptom is the same in TCP:
+            the receiver cannot accept more bytes.
+          </dd>
+
+          <dt>Key clue</dt>
+          <dd>
+            You see repeated probes with <em>no meaningful window recovery</em>. Time passes with no payload delivery and no increase
+            in the advertised window, even though the connection stays established. That “stable stall” pattern is the deciding signal.
+          </dd>
+        </dl>
+
+        <h2>Signals &amp; decision table</h2>
+        <p>
+          The fastest way to diagnose zero window is to classify the direction and decide whether the receiver is temporarily busy
+          or persistently blocked. Use the table below to pick the right next check and avoid chasing unrelated network layers.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Signal you see</th>
+              <th>What it suggests</th>
+              <th>What to check next</th>
+              <th>Related field/protocol</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Receiver advertises 0 window briefly, then Window Update restores flow</td>
+              <td>Normal backpressure under load</td>
+              <td>Correlate with receiver CPU/IO spikes; check if bursts align with application behavior</td>
+              <td>TCP window, ACK stream</td>
+            </tr>
+            <tr>
+              <td>Long 0 window with periodic Zero Window Probes</td>
+              <td>Receiver not draining buffers; likely stuck/overwhelmed</td>
+              <td>Identify which host is receiver in this direction; check whether it is the real app or a proxy</td>
+              <td>TCP window, TCP keepalive/probe behavior</td>
+            </tr>
+            <tr>
+              <td>“Window Full” seen frequently while throughput is low</td>
+              <td>Sender is limited by receiver window (flow-control bound)</td>
+              <td>Look for small advertised windows and slow window growth; compare to RTT and application response times</td>
+              <td>TCP window, RTT, ACK pacing</td>
+            </tr>
+            <tr>
+              <td>Handshake and window look fine, but retransmissions dominate</td>
+              <td>Loss/congestion instead of flow control</td>
+              <td>Switch to loss analysis: duplicate ACKs, retransmissions, out-of-order; don’t overfit to window fields</td>
+              <td>TCP retransmission, SACK (if present)</td>
+            </tr>
+            <tr>
+              <td>Zero window appears only when crossing a device boundary</td>
+              <td>Middlebox/proxy buffering or upstream dependency</td>
+              <td>Capture on both sides of the boundary; compare which side advertises zero window and whether upstream is stalled</td>
+              <td>NAT/proxy behavior, TCP window</td>
+            </tr>
+            <tr>
+              <td>Zero window + application sends nothing back for long time</td>
+              <td>App-level deadlock or blocked response generation</td>
+              <td>Confirm direction: is the receiver waiting on disk/DB? Consider splitting into “application stall” topic next</td>
+              <td>TCP stream direction, app payload timing</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>How it looks in Wireshark</h2>
+        <p><strong>Display filter example:</strong></p>
+        <pre class="ws-filter"><code>tcp.analysis.zero_window or tcp.analysis.window_full</code></pre>
+        <ul>
+          <li>
+            Wireshark may annotate packets as <strong>[TCP ZeroWindow]</strong>, <strong>[TCP Window Full]</strong>, and <strong>[TCP Window Update]</strong>.
+            These are analysis hints, not raw header fields, but they are very useful for triage.
+          </li>
+          <li>
+            In the TCP details pane, focus on <strong>Window size value</strong> (and, if present, scaling) plus the ACK progression.
+          </li>
+          <li>
+            A classic failure pattern is: long gap in payload, periodic small probe packets, and repeated ACKs with no window growth.
+          </li>
+        </ul>
+        <p>
+          <strong>Quick read tip:</strong> Identify the receiver for the stalled direction, then watch whether its advertised window ever recovers.
+        </p>
+
+        <h2>Fast triage checklist</h2>
+        <ol>
+          <li><strong>Pick the stalled direction</strong>: which side is trying to send payload when the stall happens?</li>
+          <li><strong>Confirm flow control</strong>: do you see ZeroWindow or Window Full indicators around the stall?</li>
+          <li><strong>Find the receiver</strong>: the receiver is the side advertising the window; confirm which IP that is in your capture.</li>
+          <li><strong>Look for recovery</strong>: do you see a Window Update followed by resumed payload? If yes, treat as backpressure, not outage.</li>
+          <li><strong>If no recovery, pivot</strong>: determine whether the receiver is the real app endpoint or an intermediate proxy/load balancer.</li>
+        </ol>
+
+        <h2>Common pitfalls</h2>
+        <h3>Confusing “Zero Window” with packet loss</h3>
+        <p>
+          A stalled TCP stream can look similar whether the cause is loss or flow control, but the signatures differ.
+          Loss-driven stalls show retransmissions, duplicate ACKs, and out-of-order segments. Zero window stalls show a sender that
+          largely stops sending payload because the receiver told it to stop. If you see clean ACKs and probing with no retransmissions,
+          flow control is a stronger hypothesis than congestion.
+        </p>
+
+        <h3>Assuming the receiver is always “the server”</h3>
+        <p>
+          Zero window is direction-specific. In uploads, the server can be the receiver (it’s receiving your data), but in downloads the client
+          is the receiver. Also, in modern deployments, the “receiver” in your capture might be a proxy or load balancer, not the final application.
+          Always confirm which host is advertising the window before deciding “who is at fault.”
+        </p>
+
+        <h3>Missing the role of window scaling</h3>
+        <p>
+          Window scaling is negotiated during the handshake and changes how large windows appear in the UI.
+          You do not need to do the math for P0 triage, but you should avoid comparing raw window numbers across different connections without context.
+          What matters most is the trend: shrinking to zero, staying at zero, and whether updates reopen the window.
+        </p>
+
+        <h2>Related pages (internal links)</h2>
+        <ul>
+          <li><a href="/topics.html">Back to Topics Index</a></li>
+          <li><a href="/dictionary/tcp.html">Dictionary: TCP overview</a></li>
+          <li><a href="/fields/tcp-window.html">Field: TCP Window</a></li>
+          <li><a href="/dictionary.html">Dictionary Index</a></li>
+        </ul>
+
+        <!--
+        Topics P0 v1.0 checklist
+        - Safe-scope CSS: YES (all selectors under .content)
+        - data-ads: on
+        - 700–1200 words: verify before publishing
+        - Table >= 1: YES (decision table)
+        - Lists: YES (ul + ol)
+        - Internal links >= 4: topics + dictionary + field + dictionary index
+        - Soon is not linked: yes (text only)
+        - Wireshark filter uses <pre class="ws-filter"><code>...</code></pre>: yes
+        - AdSense script embedded here: NO
+        -->
+      </article>
+
+      <div class="ad">Ad slot (topics-bottom)</div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <a href="/legal/privacy.html">Privacy</a>
+        <a href="/legal/terms.html">Terms</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+      </div>
+      <div class="copyright">© Network Packet Dictionary</div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/site.js"></script>
+</body>
+</html>
